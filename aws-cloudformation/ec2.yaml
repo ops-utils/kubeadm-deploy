@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "kubeadm"
+
+# Parameters:
+#   KeyName:
+#     ConstraintDescription: "Must be the name of an existing EC2 KeyPair."
+#     Description: "Name of an existing EC2 KeyPair to enable SSH access to the instance(s)"
+#     Type: "AWS::EC2::KeyPair::KeyName"
+
+Resources:
+
+  ControlPlane:
+    Type: "AWS::EC2::Instance"
+    Properties: 
+      ImageId: "ami-06817f01dcc7f30be" # Latest Ubuntu 18.04 in us-east-2; https://cloud-images.ubuntu.com/locator/ec2/
+      InstanceType: t3a.small
+      # KeyName: !Ref KeyName
+      # SecurityGroupIds:
+      #   - !ImportValue 
+      # SubnetId: !ImportValue vpc-PublicSubnetID
+      IamInstanceProfile: AmazonEC2RoleForSSM
+      Tags:
+        - Key:   "Name"
+          Value: "kubeadm-controlplane"
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/usr/bin/env bash
+            cd /root || exit 1
+            apt-get update && apt-get install -y awscli
+            aws s3 cp s3://kubeadm-${AWS::AccountId}/scripts/init-core.sh .
+            aws s3 cp s3://kubeadm-${AWS::AccountId}/scripts/init-control-plane.sh .
+            bash ./init-core.sh
+            bash ./init-control-plane.sh
+
+  Node:
+    Type: "AWS::EC2::Instance"
+    DependsOn: ControlPlane
+    Properties: 
+      ImageId: "ami-06817f01dcc7f30be" # Latest Ubuntu 18.04 in us-east-2; https://cloud-images.ubuntu.com/locator/ec2/
+      InstanceType: t3a.small
+      # KeyName: !Ref KeyName
+      # SecurityGroupIds:
+      #   - !ImportValue 
+      # SubnetId: !ImportValue vpc-PublicSubnetID
+      IamInstanceProfile: AmazonEC2RoleForSSM
+      Tags:
+        - Key:   "Name"
+          Value: "kubeadm-controlplane"
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/usr/bin/env bash
+            cd /root || exit 1
+            apt-get update && apt-get install -y awscli
+            aws s3 cp s3://kubeadm-${AWS::AccountId}/scripts/init-core.sh .
+            aws s3 cp s3://kubeadm-${AWS::AccountId}/scripts/init-node.sh .
+            bash ./init-core.sh
+            bash ./init-node.sh
+
+
+  #######
+  # IAM #
+  #######
+  KubeadmRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: "KubeadmPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:Head*"
+                  - "s3:List*"
+                  - "s3:GetObject"
+                  - "s3:PutObject"
+                  - "logs:*"
+                  - "sts:*"
+                  - "ec2messages:GetMessages"
+                Resource: "*"
+  
+  KubeadmInstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: "/"
+      Roles:
+        - !Ref KubeadmRole
+
+
+  #########################
+  # S3 Bucket for helpers #
+  #########################
+  Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub "kubeadm-${AWS::AccountId}"
+      # VersioningConfiguration:
+      #   Status: Enabled
+      # LifecycleConfiguration:
+      #   Rules:
+      #     - Status: Enabled
+      #       Id: Delete stale data
+      #       NoncurrentVersionExpirationInDays: 3
+      #       AbortIncompleteMultipartUpload:
+      #         DaysAfterInitiation: 1
+
+
+  ###########
+  # Logging #
+  ###########
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      LogGroupName: "/aws/ec2/kubeadm"
+      RetentionInDays: 7
+  LogStreamControlPlane:
+    Type: AWS::Logs::LogStream
+    Properties:
+      LogGroupName: !Ref LogGroup
+      LogStreamName: "control-plane"
+  LogStreamNodes:
+        Type: AWS::Logs::LogStream
+        Properties:
+          LogGroupName: !Ref LogGroup
+          LogStreamName: "nodes"
