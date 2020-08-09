@@ -9,6 +9,9 @@ Description: "kubeadm"
 
 Resources:
 
+  #################
+  # EC2 Resources #
+  #################
   ControlPlane:
     Type: "AWS::EC2::Instance"
     Properties: 
@@ -18,20 +21,34 @@ Resources:
       # SecurityGroupIds:
       #   - !ImportValue 
       # SubnetId: !ImportValue vpc-PublicSubnetID
-      IamInstanceProfile: AmazonEC2RoleForSSM
+      IamInstanceProfile: !Ref KubeadmInstanceProfile
       Tags:
         - Key:   "Name"
-          Value: "kubeadm-controlplane"
+          Value: "kubeadm-control-plane"
       UserData:
         Fn::Base64:
           !Sub |
-            #!/usr/bin/env bash
-            cd /root || exit 1
-            apt-get update && apt-get install -y awscli
-            aws s3 cp s3://kubeadm-${AWS::AccountId}/scripts/init-core.sh .
-            aws s3 cp s3://kubeadm-${AWS::AccountId}/scripts/init-control-plane.sh .
-            bash ./init-core.sh
-            bash ./init-control-plane.sh
+          #!/usr/bin/env bash
+          cd /root || exit 1
+          apt-get update && apt-get install -y awscli
+          export AWS_DEFAULT_REGION=${AWS::Region}
+          export POD_NETWORK_CIDR=$(aws ec2 describe-vpcs --filters 'Name=isDefault,Values=true' --query 'Vpcs[*].CidrBlock' --output text)
+          until aws s3 cp --recursive s3://kubeadm-${AWS::AccountId}/scripts/ ./scripts; do
+            printf "Bucket kubeadm-${AWS::AccountId} has no scripts; waiting\n"
+            sleep 5
+          done
+          bash ./scripts/init-core.sh
+          bash ./scripts/init-control-plane.sh
+          # Regenerate token, grab CA cert hash, and push to S3 for Nodes to use
+          kubeadm token create > ./token
+          aws s3 cp ./token s3://kubeadm-${AWS::AccountId}/token
+          openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt \
+            | openssl rsa -pubin -outform der 2>/dev/null \
+            | openssl dgst -sha256 -hex \
+            | sed 's/^.* //' \
+          > ./hash
+          aws s3 cp ./hash s3://kubeadm-${AWS::AccountId}/hash
+
 
   Node:
     Type: "AWS::EC2::Instance"
@@ -43,20 +60,23 @@ Resources:
       # SecurityGroupIds:
       #   - !ImportValue 
       # SubnetId: !ImportValue vpc-PublicSubnetID
-      IamInstanceProfile: AmazonEC2RoleForSSM
+      IamInstanceProfile: !Ref KubeadmInstanceProfile
       Tags:
         - Key:   "Name"
-          Value: "kubeadm-controlplane"
+          Value: "kubeadm-node"
       UserData:
         Fn::Base64:
           !Sub |
             #!/usr/bin/env bash
             cd /root || exit 1
             apt-get update && apt-get install -y awscli
-            aws s3 cp s3://kubeadm-${AWS::AccountId}/scripts/init-core.sh .
-            aws s3 cp s3://kubeadm-${AWS::AccountId}/scripts/init-node.sh .
-            bash ./init-core.sh
-            bash ./init-node.sh
+            export AWS_DEFAULT_REGION=${AWS::Region}
+            until aws s3 cp --recursive s3://kubeadm-${AWS::AccountId}/scripts/ ./scripts; do
+              printf "Bucket kubeadm-${AWS::AccountId} has no scripts; waiting\n"
+              sleep 5
+            done
+            bash ./scripts/init-core.sh
+            bash ./scripts/init-node-aws.sh
 
 
   #######
@@ -74,7 +94,9 @@ Resources:
                 - "ec2.amazonaws.com"
             Action:
               - "sts:AssumeRole"
-      Path: "/"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        - "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
       Policies:
         - PolicyName: "KubeadmPolicy"
           PolicyDocument:
@@ -84,17 +106,30 @@ Resources:
                 Action:
                   - "s3:Head*"
                   - "s3:List*"
+                Resource: "*"
+              - Effect: "Allow"
+                Action:
                   - "s3:GetObject"
                   - "s3:PutObject"
+                Resource: !Sub
+                  - "${BucketArn}/*"
+                  - { BucketArn: !GetAtt Bucket.Arn }
+              - Effect: "Allow"
+                Action:
                   - "logs:*"
-                  - "sts:*"
-                  - "ec2messages:GetMessages"
-                Resource: "*"
+                Resource: !Sub
+                  - "${LogGroupArn}"
+                  - { LogGroupArn: !GetAtt LogGroup.Arn }
+              - Effect: "Allow"
+                Action:
+                  - "logs:*"
+                Resource: !Sub
+                  - "${LogGroupArn}/*"
+                  - { LogGroupArn: !GetAtt LogGroup.Arn }
   
   KubeadmInstanceProfile:
     Type: "AWS::IAM::InstanceProfile"
     Properties:
-      Path: "/"
       Roles:
         - !Ref KubeadmRole
 
@@ -132,7 +167,7 @@ Resources:
       LogGroupName: !Ref LogGroup
       LogStreamName: "control-plane"
   LogStreamNodes:
-        Type: AWS::Logs::LogStream
-        Properties:
-          LogGroupName: !Ref LogGroup
-          LogStreamName: "nodes"
+    Type: AWS::Logs::LogStream
+    Properties:
+      LogGroupName: !Ref LogGroup
+      LogStreamName: "nodes"
