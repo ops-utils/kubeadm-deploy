@@ -1,11 +1,25 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "kubeadm"
+Description: kubeadm
 
-# Parameters:
-#   KeyName:
-#     ConstraintDescription: "Must be the name of an existing EC2 KeyPair."
-#     Description: "Name of an existing EC2 KeyPair to enable SSH access to the instance(s)"
-#     Type: "AWS::EC2::KeyPair::KeyName"
+Parameters:
+  StackName:
+    Description: Unique name for stack and its components. Defaults to 'kubeadm'.
+    Type: String
+    Default: kubeadm
+  KeyName:
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair
+    Description: |
+      Name of an existing EC2 KeyPair to enable SSH access to the instance(s)
+    Type: AWS::EC2::KeyPair::KeyName
+  AmiId:
+    ConstraintDescription: Must be a valid AMI ID for your chosen region
+    Description: |
+      AMI ID for the control plane & nodes. Currently defaults to the AMI ID for
+      Ubuntu 18.04 in us-east-2. If you want to use another Ubuntu, for example,
+      you can do a lookup here: https://cloud-images.ubuntu.com/locator/ec2/
+    Type: String
+    Default: ami-06817f01dcc7f30be # Latest Ubuntu 18.04 in us-east-2
+  
 
 Resources:
 
@@ -13,9 +27,9 @@ Resources:
   # EC2 Resources #
   #################
   ControlPlane:
-    Type: "AWS::EC2::Instance"
+    Type: AWS::EC2::Instance
     Properties: 
-      ImageId: "ami-06817f01dcc7f30be" # Latest Ubuntu 18.04 in us-east-2; https://cloud-images.ubuntu.com/locator/ec2/
+      ImageId: !Ref AmiId
       InstanceType: t3a.small
       # KeyName: !Ref KeyName
       # SecurityGroupIds:
@@ -23,8 +37,8 @@ Resources:
       # SubnetId: !ImportValue vpc-PublicSubnetID
       IamInstanceProfile: !Ref KubeadmInstanceProfile
       Tags:
-        - Key:   "Name"
-          Value: "kubeadm-control-plane"
+        - Key:   'Name'
+          Value: !Sub '${StackName}-control-plane'
       UserData:
         Fn::Base64:
           !Sub |
@@ -33,28 +47,28 @@ Resources:
           apt-get update && apt-get install -y awscli
           export AWS_DEFAULT_REGION=${AWS::Region}
           export POD_NETWORK_CIDR=$(aws ec2 describe-vpcs --filters 'Name=isDefault,Values=true' --query 'Vpcs[*].CidrBlock' --output text)
-          until aws s3 cp --recursive s3://kubeadm-${AWS::AccountId}/scripts/ ./scripts; do
-            printf "Bucket kubeadm-${AWS::AccountId} has no scripts; waiting\n"
+          until aws s3 cp --recursive s3://${StackName}-${AWS::AccountId}/scripts/ ./scripts; do
+            printf "Bucket ${StackName}-${AWS::AccountId} has no scripts; waiting\n"
             sleep 5
           done
           bash ./scripts/init-core.sh
           bash ./scripts/init-control-plane.sh
           # Regenerate token, grab CA cert hash, and push to S3 for Nodes to use
           kubeadm token create > ./token
-          aws s3 cp ./token s3://kubeadm-${AWS::AccountId}/token
+          aws s3 cp ./token s3://${StackName}-${AWS::AccountId}/token
           openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt \
             | openssl rsa -pubin -outform der 2>/dev/null \
             | openssl dgst -sha256 -hex \
             | sed 's/^.* //' \
           > ./hash
-          aws s3 cp ./hash s3://kubeadm-${AWS::AccountId}/hash
+          aws s3 cp ./hash s3://${StackName}-${AWS::AccountId}/hash
 
 
   Node:
-    Type: "AWS::EC2::Instance"
+    Type: AWS::EC2::Instance
     DependsOn: ControlPlane
     Properties: 
-      ImageId: "ami-06817f01dcc7f30be" # Latest Ubuntu 18.04 in us-east-2; https://cloud-images.ubuntu.com/locator/ec2/
+      ImageId: !Ref AmiId
       InstanceType: t3a.small
       # KeyName: !Ref KeyName
       # SecurityGroupIds:
@@ -62,8 +76,8 @@ Resources:
       # SubnetId: !ImportValue vpc-PublicSubnetID
       IamInstanceProfile: !Ref KubeadmInstanceProfile
       Tags:
-        - Key:   "Name"
-          Value: "kubeadm-node"
+        - Key:   'Name'
+          Value: !Sub '${StackName}-node'
       UserData:
         Fn::Base64:
           !Sub |
@@ -71,8 +85,8 @@ Resources:
             cd /root || exit 1
             apt-get update && apt-get install -y awscli
             export AWS_DEFAULT_REGION=${AWS::Region}
-            until aws s3 cp --recursive s3://kubeadm-${AWS::AccountId}/scripts/ ./scripts; do
-              printf "Bucket kubeadm-${AWS::AccountId} has no scripts; waiting\n"
+            until aws s3 cp --recursive s3://${StackName}-${AWS::AccountId}/scripts/ ./scripts; do
+              printf "Bucket ${StackName}-${AWS::AccountId} has no scripts; waiting\n"
               sleep 5
             done
             bash ./scripts/init-core.sh
@@ -83,52 +97,49 @@ Resources:
   # IAM #
   #######
   KubeadmRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
-          - Effect: "Allow"
+          - Effect: 'Allow'
             Principal:
               Service:
-                - "ec2.amazonaws.com"
+                - 'ec2.amazonaws.com'
             Action:
-              - "sts:AssumeRole"
+              - 'sts:AssumeRole'
       ManagedPolicyArns:
-        - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-        - "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+        - 'arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess'
       Policies:
-        - PolicyName: "KubeadmPolicy"
+        - PolicyName: 'KubeadmPolicy'
           PolicyDocument:
-            Version: "2012-10-17"
+            Version: '2012-10-17'
             Statement:
-              - Effect: "Allow"
+              - Effect: 'Allow'
                 Action:
-                  - "s3:Head*"
-                  - "s3:List*"
-                Resource: "*"
-              - Effect: "Allow"
+                  - 's3:Head*'
+                  - 's3:List*'
+                Resource: '*'
+              - Effect: 'Allow'
                 Action:
-                  - "s3:GetObject"
-                  - "s3:PutObject"
+                  - 's3:GetObject'
+                  - 's3:PutObject'
                 Resource: !Sub
-                  - "${BucketArn}/*"
-                  - { BucketArn: !GetAtt Bucket.Arn }
-              - Effect: "Allow"
+                  - '${Bucket.Arn}/*'
+              - Effect: 'Allow'
                 Action:
-                  - "logs:*"
+                  - 'logs:*'
                 Resource: !Sub
-                  - "${LogGroupArn}"
-                  - { LogGroupArn: !GetAtt LogGroup.Arn }
-              - Effect: "Allow"
+                  - '${LogGroup.Arn}'
+              - Effect: 'Allow'
                 Action:
-                  - "logs:*"
+                  - 'logs:*'
                 Resource: !Sub
-                  - "${LogGroupArn}/*"
-                  - { LogGroupArn: !GetAtt LogGroup.Arn }
+                  - '${LogGroup.Arn}/*'
   
   KubeadmInstanceProfile:
-    Type: "AWS::IAM::InstanceProfile"
+    Type: 'AWS::IAM::InstanceProfile'
     Properties:
       Roles:
         - !Ref KubeadmRole
@@ -141,16 +152,16 @@ Resources:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
     Properties:
-      BucketName: !Sub "kubeadm-${AWS::AccountId}"
-      # VersioningConfiguration:
-      #   Status: Enabled
-      # LifecycleConfiguration:
-      #   Rules:
-      #     - Status: Enabled
-      #       Id: Delete stale data
-      #       NoncurrentVersionExpirationInDays: 3
-      #       AbortIncompleteMultipartUpload:
-      #         DaysAfterInitiation: 1
+      BucketName: !Sub '${StackName}-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Status: Enabled
+            Id: Delete stale data
+            NoncurrentVersionExpirationInDays: 3
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
 
 
   ###########
@@ -159,15 +170,15 @@ Resources:
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties: 
-      LogGroupName: "/aws/ec2/kubeadm"
+      LogGroupName: !Sub '/aws/ec2/${StackName}'
       RetentionInDays: 7
   LogStreamControlPlane:
     Type: AWS::Logs::LogStream
     Properties:
       LogGroupName: !Ref LogGroup
-      LogStreamName: "control-plane"
+      LogStreamName: 'control-plane'
   LogStreamNodes:
     Type: AWS::Logs::LogStream
     Properties:
       LogGroupName: !Ref LogGroup
-      LogStreamName: "nodes"
+      LogStreamName: 'nodes'
