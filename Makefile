@@ -17,7 +17,8 @@ push-scripts-to-aws-s3:
 
 destroy-aws-s3:
 	@printf "Deleting S3 bucket %s...\n" s3://$(STACK_NAME)-$(AWS_ACCOUNT_NUMBER)
-	python3 -c "import boto3; s3 = boto3.resource('s3').Bucket('$(STACK_NAME)-$(AWS_ACCOUNT_NUMBER)').object_versions.delete()"
+	python3 -c "import boto3; s3 = boto3.resource('s3').Bucket('$(STACK_NAME)-$(AWS_ACCOUNT_NUMBER)').object_versions.delete()" || true
+	aws s3 rb s3://$(STACK_NAME)-$(AWS_ACCOUNT_NUMBER) || true
 
 destroy-aws:
 	@make -s destroy-aws-s3

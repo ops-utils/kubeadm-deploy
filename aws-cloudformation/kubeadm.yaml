@@ -2,15 +2,16 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: kubeadm
 
 Parameters:
-  StackName:
-    Description: Unique name for stack and its components. Defaults to 'kubeadm'.
+  ClusterName:
+    Description: |
+      Unique name for cluster and its components. Defaults to 'kubeadm'.
     Type: String
     Default: kubeadm
-  KeyName:
-    ConstraintDescription: Must be the name of an existing EC2 KeyPair
-    Description: |
-      Name of an existing EC2 KeyPair to enable SSH access to the instance(s)
-    Type: AWS::EC2::KeyPair::KeyName
+  # KeyName:
+  #   ConstraintDescription: Must be the name of an existing EC2 KeyPair
+  #   Description: |
+  #     Name of an existing EC2 KeyPair to enable SSH access to the instance(s)
+  #   Type: AWS::EC2::KeyPair::KeyName
   AmiId:
     ConstraintDescription: Must be a valid AMI ID for your chosen region
     Description: |
@@ -19,7 +20,15 @@ Parameters:
       you can do a lookup here: https://cloud-images.ubuntu.com/locator/ec2/
     Type: String
     Default: ami-06817f01dcc7f30be # Latest Ubuntu 18.04 in us-east-2
-  
+  MinClusterSize:
+    Description: Minimum number of Nodes for the cluster. Defaults to 1.
+    Type: String
+    Default: '1'
+  MaxClusterSize:
+    Description: Maximum number of Nodes for the cluster. Defaults to 1.
+    Type: String
+    Default: '1'
+
 
 Resources:
 
@@ -38,30 +47,32 @@ Resources:
       IamInstanceProfile: !Ref KubeadmInstanceProfile
       Tags:
         - Key:   'Name'
-          Value: !Sub '${StackName}-control-plane'
+          Value: !Sub '${ClusterName}-control-plane'
       UserData:
         Fn::Base64:
-          !Sub |
-          #!/usr/bin/env bash
-          cd /root || exit 1
-          apt-get update && apt-get install -y awscli
-          export AWS_DEFAULT_REGION=${AWS::Region}
-          export POD_NETWORK_CIDR=$(aws ec2 describe-vpcs --filters 'Name=isDefault,Values=true' --query 'Vpcs[*].CidrBlock' --output text)
-          until aws s3 cp --recursive s3://${StackName}-${AWS::AccountId}/scripts/ ./scripts; do
-            printf "Bucket ${StackName}-${AWS::AccountId} has no scripts; waiting\n"
-            sleep 5
-          done
-          bash ./scripts/init-core.sh
-          bash ./scripts/init-control-plane.sh
-          # Regenerate token, grab CA cert hash, and push to S3 for Nodes to use
-          kubeadm token create > ./token
-          aws s3 cp ./token s3://${StackName}-${AWS::AccountId}/token
-          openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt \
-            | openssl rsa -pubin -outform der 2>/dev/null \
-            | openssl dgst -sha256 -hex \
-            | sed 's/^.* //' \
-          > ./hash
-          aws s3 cp ./hash s3://${StackName}-${AWS::AccountId}/hash
+          Fn::Sub:
+          - |
+            #!/usr/bin/env bash
+            cd /root || exit 1
+            apt-get update && apt-get install -y awscli
+            export AWS_DEFAULT_REGION=${AWS::Region}
+            export POD_NETWORK_CIDR=$(aws ec2 describe-vpcs --filters 'Name=isDefault,Values=true' --query 'Vpcs[*].CidrBlock' --output text)
+            until aws s3 cp --recursive s3://${ClusterName}-${AWS::AccountId}/scripts/ ./scripts; do
+              printf "Bucket ${ClusterName}-${AWS::AccountId} has no scripts; waiting\n"
+              sleep 5
+            done
+            bash ./scripts/init-core.sh
+            bash ./scripts/init-control-plane.sh
+            # Regenerate token, grab CA cert hash, and push to S3 for Nodes to use
+            kubeadm token create > ./token
+            aws s3 cp ./token s3://${ClusterName}-${AWS::AccountId}/token
+            openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt \
+              | openssl rsa -pubin -outform der 2>/dev/null \
+              | openssl dgst -sha256 -hex \
+              | sed 's/^.* //' \
+            > ./hash
+            aws s3 cp ./hash s3://${ClusterName}-${AWS::AccountId}/hash
+          - ClusterName: !Ref ClusterName
 
 
   Node:
@@ -77,21 +88,66 @@ Resources:
       IamInstanceProfile: !Ref KubeadmInstanceProfile
       Tags:
         - Key:   'Name'
-          Value: !Sub '${StackName}-node'
+          Value: !Sub '${ClusterName}-node'
       UserData:
         Fn::Base64:
-          !Sub |
-            #!/usr/bin/env bash
-            cd /root || exit 1
-            apt-get update && apt-get install -y awscli
-            export AWS_DEFAULT_REGION=${AWS::Region}
-            until aws s3 cp --recursive s3://${StackName}-${AWS::AccountId}/scripts/ ./scripts; do
-              printf "Bucket ${StackName}-${AWS::AccountId} has no scripts; waiting\n"
-              sleep 5
-            done
-            bash ./scripts/init-core.sh
-            bash ./scripts/init-node-aws.sh
+          Fn::Sub:
+            - |
+              #!/usr/bin/env bash
+              cd /root || exit 1
+              apt-get update && apt-get install -y awscli
+              export AWS_DEFAULT_REGION=${AWS::Region}
+              until aws s3 cp --recursive s3://${ClusterName}-${AWS::AccountId}/scripts/ ./scripts; do
+                printf "Bucket ${ClusterName}-${AWS::AccountId} has no scripts; waiting\n"
+                sleep 5
+              done
+              bash ./scripts/init-core.sh
+              bash ./scripts/init-node-aws.sh
+            - ClusterName: !Ref ClusterName
 
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ClusterName}'
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: t3a.small
+        # KeyName: !Ref KeyName
+        # SecurityGroupIds:
+        #   - !ImportValue 
+        # SubnetId: !ImportValue vpc-PublicSubnetID
+        IamInstanceProfile: !Ref KubeadmInstanceProfile
+        TagSpecifications:
+          Tags:
+            - Key:   'Name'
+              Value: !Sub '${ClusterName}-node'
+        UserData:
+          Fn::Base64:
+            Fn::Sub:
+              - |
+                #!/usr/bin/env bash
+                cd /root || exit 1
+                apt-get update && apt-get install -y awscli
+                export AWS_DEFAULT_REGION=${AWS::Region}
+                until aws s3 cp --recursive s3://${ClusterName}-${AWS::AccountId}/scripts/ ./scripts; do
+                  printf "Bucket ${ClusterName}-${AWS::AccountId} has no scripts; waiting\n"
+                  sleep 5
+                done
+                bash ./scripts/init-core.sh
+                bash ./scripts/init-node-aws.sh
+              - ClusterName: !Ref ClusterName
+
+  ASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      # VPCZoneIdentifier:
+      #   - !Ref Subnet1
+      #   - !Ref Subnet2
+      LaunchConfigurationName: !Ref LaunchTemplate
+      MinSize: !Ref MinClusterSize
+      MaxSize: !Ref MaxClusterSize
+      DesiredCapacity: !Ref MinClusterSize
 
   #######
   # IAM #
@@ -125,18 +181,15 @@ Resources:
                 Action:
                   - 's3:GetObject'
                   - 's3:PutObject'
-                Resource: !Sub
-                  - '${Bucket.Arn}/*'
+                Resource: !Sub '${Bucket.Arn}/*'
               - Effect: 'Allow'
                 Action:
                   - 'logs:*'
-                Resource: !Sub
-                  - '${LogGroup.Arn}'
+                Resource: !Sub '${LogGroup.Arn}'
               - Effect: 'Allow'
                 Action:
                   - 'logs:*'
-                Resource: !Sub
-                  - '${LogGroup.Arn}/*'
+                Resource: !Sub '${LogGroup.Arn}/*'
   
   KubeadmInstanceProfile:
     Type: 'AWS::IAM::InstanceProfile'
@@ -152,7 +205,7 @@ Resources:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
     Properties:
-      BucketName: !Sub '${StackName}-${AWS::AccountId}'
+      BucketName: !Sub '${ClusterName}-${AWS::AccountId}'
       VersioningConfiguration:
         Status: Enabled
       LifecycleConfiguration:
@@ -170,7 +223,7 @@ Resources:
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties: 
-      LogGroupName: !Sub '/aws/ec2/${StackName}'
+      LogGroupName: !Sub '/aws/ec2/${ClusterName}'
       RetentionInDays: 7
   LogStreamControlPlane:
     Type: AWS::Logs::LogStream
@@ -182,3 +235,7 @@ Resources:
     Properties:
       LogGroupName: !Ref LogGroup
       LogStreamName: 'nodes'
+
+
+# Outputs:
+#   x
