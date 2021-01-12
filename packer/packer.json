@@ -107,7 +107,7 @@
           {
             "Action": ["s3:*"],
             "Effect": "Allow",
-            "Resource": "arn:aws:s3:::kubeadm-*"
+            "Resource": "arn:aws:s3:::{{user `cluster_name`}}-*"
           }
         ]
       },
@@ -137,6 +137,7 @@
       "execute_command": "echo 'packer' | sudo -S bash -euo pipefail -c '{{ .Vars }} {{ .Path }}'",
       "inline": ["bash /root/scripts/init-core.sh"],
       "environment_vars": [
+        "cluster_name={{user `cluster_name`}}",
         "cri={{user `cri`}}",
         "node_type={{user `node_type`}}",
         "platform={{user `platform`}}",

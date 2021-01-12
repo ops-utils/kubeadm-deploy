@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Initialize control plane
+# This is kind of irritating, but initializing a control plane on/in a DIFFERENT
+# IP or network than the launch location causes etcd/kube-apiserver to not work
+# at next launch. So this script contains the core init functionality to be run
+# by other control-plane init scripts, which can then run their own additional
+# inits in top of it.
+
+printf "Initializing Control Plane...\n" > /dev/stderr
 kubeadm init --pod-network-cidr "${pod_network_cidr:-NO_POD_NETWORK_CIDR}" # --ignore-preflight-errors=NumCPU
 
 # Set pointer to config file, so kubectl works on the control plane node if needed
@@ -38,14 +44,14 @@ kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documen
 # platform-specific scripts will need to push/store them somewhere the Workers
 # can access them
 
-mkdir -p "${HOME}"/kubeadm-join
+mkdir -p /root/kubeadm-join
 
-kubeadm token create --ttl 0 > "${HOME}"/kubeadm-join/token
+kubeadm token create --ttl 0 > /root/kubeadm-join/token
 
 openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt \
   | openssl rsa -pubin -outform der 2>/dev/null \
   | openssl dgst -sha256 -hex \
   | sed 's/^.* //' \
-> "${HOME}"/kubeadm-join/hash
+> /root/kubeadm-join/hash
 
 exit 0

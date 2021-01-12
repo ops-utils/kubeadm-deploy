@@ -2,6 +2,11 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'kubeadm'
 
 Parameters:
+  ClusterName:
+    Description: |
+      Easily-identifiable name for your cluster. Defaults to "kubeadm-my-cluster"
+    Type: String
+    Default: 'kubeadm-my-cluster'
   ControlPlaneAmiId:
     Description: AMI ID of the Control Plane node(s)
     Type: String
@@ -16,146 +21,9 @@ Parameters:
     Description: EC2 instance type for all nodes
     Type: String
     Default: t3a.small
-  VPCCidr:
-    Description: CIDR block for the kubeadm VPC
-    Type: String
-    Default: '10.0.0.0/16'
-  PublicSubnet1Cidr:
-    Description: CIDR block for the first public subnet
-    Type: String
-    Default: '10.0.1.0/25'
-  PublicSubnet2Cidr:
-    Description: CIDR block for the second public subnet
-    Type: String
-    Default: '10.0.1.128/25'
-  PrivateSubnet1Cidr:
-    Description: CIDR block for the first private subnet
-    Type: String
-    Default: '10.0.2.0/25'
-  PrivateSubnet2Cidr:
-    Description: CIDR block for the second private subnet
-    Type: String
-    Default: '10.0.2.128/25'
 
 
 Resources:
-
-  #################
-  # VPC Resources #
-  #################
-  VPC:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: !Ref VPCCidr
-      Tags:
-        - Key:   'Name'
-          Value: 'kubeadm-vpc'
-
-  InternetGateway:
-    Type: AWS::EC2::InternetGateway
-  VPCGatewayAttachment:
-    Type: AWS::EC2::VPCGatewayAttachment
-    Properties:
-      VpcId: !Ref VPC
-      InternetGatewayId: !Ref InternetGateway
-
-  PublicSubnet1:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: !Ref PublicSubnet1Cidr
-      MapPublicIpOnLaunch: 'true'
-  PublicSubnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: !Ref PublicSubnet2Cidr
-      MapPublicIpOnLaunch: 'true'
-  PublicRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-  PublicRoute:
-    Type: AWS::EC2::Route
-    DependsOn: VPCGatewayAttachment
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: '0.0.0.0/0'
-      GatewayId: !Ref InternetGateway
-  PublicSubnet1RouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnet1
-      RouteTableId: !Ref PublicRouteTable
-  PublicSubnet2RouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnet2
-      RouteTableId: !Ref PublicRouteTable
-  PublicSubnet1NetworkAclAssociation:
-    Type: AWS::EC2::SubnetNetworkAclAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnet1
-      NetworkAclId: !GetAtt VPC.DefaultNetworkAcl
-  PublicSubnet2NetworkAclAssociation:
-    Type: AWS::EC2::SubnetNetworkAclAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnet2
-      NetworkAclId: !GetAtt VPC.DefaultNetworkAcl
-
-  PrivateSubnet1:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: !Ref PrivateSubnet1Cidr
-  PrivateSubnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: !Ref PrivateSubnet2Cidr
-  PrivateRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-  PrivateSubnet1RouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PrivateSubnet1
-      RouteTableId: !Ref PrivateRouteTable
-  PrivateSubnet2RouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PrivateSubnet2
-      RouteTableId: !Ref PrivateRouteTable
-  PrivateSubnet1NetworkAclAssociation:
-    Type: AWS::EC2::SubnetNetworkAclAssociation
-    Properties:
-      SubnetId: !Ref PrivateSubnet1
-      NetworkAclId: !GetAtt VPC.DefaultNetworkAcl
-  PrivateSubnet2NetworkAclAssociation:
-    Type: AWS::EC2::SubnetNetworkAclAssociation
-    Properties:
-      SubnetId: !Ref PrivateSubnet2
-      NetworkAclId: !GetAtt VPC.DefaultNetworkAcl
-
-  # Private subnets also need a NAT Gateway, which also needs an EIP
-  NATGateway:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      AllocationId: !GetAtt EIP.AllocationId
-      SubnetId: !Ref PublicSubnet1
-  EIP:
-    Type: AWS::EC2::EIP
-    DependsOn: VPCGatewayAttachment
-    Properties:
-      Domain: vpc
-  PrivateRoute:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable
-      DestinationCidrBlock: '0.0.0.0/0'
-      NatGatewayId: !Ref NATGateway
-
 
   #################
   # EC2 Resources #
@@ -168,13 +36,18 @@ Resources:
       IamInstanceProfile: !Ref KubeadmInstanceProfile
       SecurityGroupIds:
         - !Ref ControlPlaneSG
-      # This *would* be PrivateSubnet1, but ca-central freaked out on me (it's
-      # got a fourth placeholder AZ that's not real as of the time of this
-      # writing)
-      SubnetId: !Ref PrivateSubnet2
+      SubnetId: { Fn::ImportValue: !Sub '${ClusterName}-vpc-PrivateSubnet1Id' }
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/usr/bin/env bash
+            export cluster_name="${ClusterName}"
+            export pod_network_cidr="${pod_network_cidr}"
+            bash /root/scripts/init-control-plane-aws.sh
+          - pod_network_cidr: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
       Tags:
         - Key:   'Name'
-          Value: 'kubeadm-control-plane'
+          Value: !Sub '${ClusterName}-control-plane'
   
   WorkerLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
@@ -191,11 +64,12 @@ Resources:
           - ResourceType: instance
             Tags:
               - Key:   'Name'
-                Value: 'kubeadm-worker'
+                Value: !Sub '${ClusterName}-worker'
         UserData:
           Fn::Base64:
             !Sub |
               #!/usr/bin/env bash
+              export cluster_name="${ClusterName}"
               bash /root/scripts/init-worker-aws.sh
 
   WorkerASG:
@@ -212,93 +86,51 @@ Resources:
       MinSize: !Ref WorkerNodeCount
       MaxSize: !Ref WorkerNodeCount
       VPCZoneIdentifier:
-        - !Ref PrivateSubnet1
-        - !Ref PrivateSubnet2
+        - { Fn::ImportValue: !Sub '${ClusterName}-vpc-PrivateSubnet1Id' }
+        - { Fn::ImportValue: !Sub '${ClusterName}-vpc-PrivateSubnet2Id' }
 
   ControlPlaneSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: 'kubeadm SG for Control Plane nodes'
-      VpcId: !Ref VPC
+      VpcId: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcId' }
       SecurityGroupIngress:
         - IpProtocol: icmp
           FromPort: -1
           ToPort: -1
-          CidrIp: !Ref VPCCidr
+          CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
         - IpProtocol: tcp
           FromPort: 6443
           ToPort: 6443
-          CidrIp: !Ref VPCCidr
+          CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
         - IpProtocol: tcp
           FromPort: 2379
           ToPort: 2380
-          CidrIp: !Ref VPCCidr
+          CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
         - IpProtocol: tcp
           FromPort: 10250
           ToPort: 10252
-          CidrIp: !Ref VPCCidr
+          CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
         
   WorkerSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: 'kubeadm SG for Worker nodes'
-      VpcId: !Ref VPC
+      VpcId: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcId' }
       SecurityGroupIngress:
         - IpProtocol: icmp
           FromPort: -1
           ToPort: -1
-          CidrIp: !Ref VPCCidr
+          CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
         - IpProtocol: tcp
           FromPort: 10250
           ToPort: 10250
-          CidrIp: !Ref VPCCidr
+          CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
         - IpProtocol: tcp
           FromPort: 30000
           ToPort: 32767
-          CidrIp: !Ref VPCCidr
+          CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
 
-  LaunchTemplate:
-    Type: AWS::EC2::LaunchTemplate
-    Properties:
-      LaunchTemplateName: !Sub '${ClusterName}'
-      LaunchTemplateData:
-        ImageId: !Ref AmiId
-        InstanceType: t3a.small
-        # KeyName: !Ref KeyName
-        # SecurityGroupIds:
-        #   - !ImportValue 
-        # SubnetId: !ImportValue vpc-PublicSubnetID
-        IamInstanceProfile: !Ref KubeadmInstanceProfile
-        TagSpecifications:
-          Tags:
-            - Key:   'Name'
-              Value: !Sub '${ClusterName}-node'
-        UserData:
-          Fn::Base64:
-            Fn::Sub:
-              - |
-                #!/usr/bin/env bash
-                cd /root || exit 1
-                apt-get update && apt-get install -y awscli
-                export AWS_DEFAULT_REGION=${AWS::Region}
-                until aws s3 cp --recursive s3://${ClusterName}-${AWS::AccountId}/scripts/ ./scripts; do
-                  printf "Bucket ${ClusterName}-${AWS::AccountId} has no scripts; waiting\n"
-                  sleep 5
-                done
-                bash ./scripts/init-core.sh
-                bash ./scripts/init-node-aws.sh
-              - ClusterName: !Ref ClusterName
-
-  ASG:
-    Type: AWS::AutoScaling::AutoScalingGroup
-    Properties:
-      # VPCZoneIdentifier:
-      #   - !Ref Subnet1
-      #   - !Ref Subnet2
-      LaunchConfigurationName: !Ref LaunchTemplate
-      MinSize: !Ref MinClusterSize
-      MaxSize: !Ref MaxClusterSize
-      DesiredCapacity: !Ref MinClusterSize
 
   #######
   # IAM #
@@ -330,17 +162,17 @@ Resources:
                 Resource: '*'
               - Effect: 'Allow'
                 Action:
-                  - "s3:GetObject"
-                  - "s3:PutObject"
-                Resource: !Sub "arn:aws:s3:::kubeadm-${AWS::AccountId}/*"
-              - Effect: "Allow"
+                  - 's3:GetObject'
+                  - 's3:PutObject'
+                Resource: !Sub 'arn:aws:s3:::${ClusterName}-${AWS::AccountId}/*'
+              - Effect: 'Allow'
                 Action:
-                  - "logs:*"
-                Resource: !Sub "${LogGroup.Arn}"
-              - Effect: "Allow"
+                  - 'logs:*'
+                Resource: !Sub '${LogGroup.Arn}'
+              - Effect: 'Allow'
                 Action:
-                  - "logs:*"
-                Resource: !Sub "${LogGroup.Arn}/*"
+                  - 'logs:*'
+                Resource: !Sub '${LogGroup.Arn}/*'
   
   KubeadmInstanceProfile:
     Type: AWS::IAM::InstanceProfile

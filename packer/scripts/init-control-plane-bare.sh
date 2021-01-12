@@ -6,10 +6,14 @@ set -euo pipefail
 # same network, like a homelab or within a single cloud VPC. Feel free to modify
 # as you see fit.
 
-# This script sets up a systemd unit to host an endpoint for workers to retrieve
-# the cluster token & hash, so those workers can join the cluster. The workers
-# will need to scan the subnet to find where port 8000 is open, then try to
-# retrieve these files from the provided endpoint.
+# This script runs the core control-plane init, and then sets up a systemd unit
+# to host an endpoint for workers to retrieve the cluster token & hash, so those
+# workers can join the cluster. The workers will need to scan the subnet to find
+# where port 8000 is open, then try to retrieve these files from the provided
+# endpoint.
+
+# Run the core init script
+bash ./init-control-plane.sh
 
 cat <<EOF > /etc/systemd/system/kubeadm-join.service
 [Unit]

@@ -1,4 +1,4 @@
-SHELL = /usr/bin/env bash
+SHELL = /usr/bin/env bash -euo pipefail
 
 # If you pass 'only=<builder>', it will get sent to the '-only=' flag for
 # 'packer build'
@@ -8,14 +8,12 @@ endif
 
 validate:
 	shellcheck scripts/*
-	set -eu; \
 	packer validate \
 		-var node_type="$${node_type}" \
 		-var-file vars.json \
 		packer.json
 
 build: validate
-	set -eu; \
 	packer build \
 		-var-file vars.json \
 		-var node_type="$${node_type}" \
@@ -25,12 +23,10 @@ build: validate
 		packer.json
 
 convert-vbox-to-raw:
-	@set -eu; \
-	vboxmanage clonemedium disk --format RAW "$${disk}" "$${disk}".img
+	@vboxmanage clonemedium disk --format RAW "$${disk}" "$${disk}".img
 
 convert-qemu-to-raw:
-	@set -eu; \
-	qemu-img convert -f qcow2 -O raw "$${disk}" "$${disk}".img
+	@qemu-img convert -f qcow2 -O raw "$${disk}" "$${disk}".img
 
 convert-qemu-to-vbox:
 	@for i in control-plane worker; do \
@@ -45,7 +41,6 @@ convert-qemu-to-vbox:
 # * QEMU should know how to handle user-mode networking automatically, but I've
 #   had to set the netdev manually to the same that Packer uses at build time
 start-qemu:
-	set -eu; \
 	qemu-system-x86_64 \
 		-drive file="$${disk}" \
 		-smp cpus=2 \

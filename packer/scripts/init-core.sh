@@ -6,10 +6,10 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export APT_LISTCHANGES_FRONTEND=none
 
+apt-get update
+
 # Make sure you're in a spot to run other scripts from the same workdir
 cd "$(dirname "$0")" || exit 1
-
-apt-get update
 
 apt-wipe() {
   apt-get autoremove -y
@@ -46,6 +46,17 @@ init-cri() {
       docker-ce \
       docker-ce-cli \
       containerd.io
+    # Set systemd as the cgroup driver
+    {
+      echo '{'
+      echo '  "exec-opts": ["native.cgroupdriver=systemd"],'
+			echo '  "log-driver": "json-file",'
+			echo '  "log-opts": {'
+			echo '    "max-size": "100m"'
+		  echo '  },'
+			echo '  "storage-driver": "overlay2"'
+      echo '}'
+    } > /etc/docker/daemon.json
   else
     printf "\nERROR: env var 'cri' not correctly passed to init-core.sh. Exiting.\n\n" > /dev/stderr && sleep 2
     return 1
@@ -104,9 +115,8 @@ main() {
 main
 
 
-# Now, fork remaining logic based on environment
+# Now, fork remaining logic based on target platform
 if [[ "${node_type:-undefined_node_type}" == "control-plane" ]]; then
-  bash ./init-control-plane.sh
   bash ./init-control-plane-"${platform:-undefined_platform}".sh
 elif [[ "${node_type:-undefined_node_type}" == "worker" ]]; then
   bash ./init-worker-"${platform:-undefined_platform}".sh
