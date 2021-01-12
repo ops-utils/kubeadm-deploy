@@ -28,13 +28,10 @@ destroy-s3-bucket:
 	@printf "Done\n"
 
 destroy-aws:
-	@aws cloudformation delete-stack --stack-name kubeadm
+	@make -s destroy-aws-s3
 	@printf "Waiting for stack delete to complete...\n"
 	@aws cloudformation wait stack-delete-complete --stack-name kubeadm
 	@printf "Done\n"
-# You can remove the following lines, but the CFN template assumes you're
-# retaining the S3 bucket when the stack goes down (since you can't delete a
-# bucket with contents)
 
 # Use SSM Session Manager to connect to your cluster nodes by nametag
 ssmsm-node:

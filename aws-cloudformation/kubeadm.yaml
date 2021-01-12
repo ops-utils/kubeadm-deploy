@@ -257,6 +257,48 @@ Resources:
           ToPort: 32767
           CidrIp: !Ref VPCCidr
 
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ClusterName}'
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: t3a.small
+        # KeyName: !Ref KeyName
+        # SecurityGroupIds:
+        #   - !ImportValue 
+        # SubnetId: !ImportValue vpc-PublicSubnetID
+        IamInstanceProfile: !Ref KubeadmInstanceProfile
+        TagSpecifications:
+          Tags:
+            - Key:   'Name'
+              Value: !Sub '${ClusterName}-node'
+        UserData:
+          Fn::Base64:
+            Fn::Sub:
+              - |
+                #!/usr/bin/env bash
+                cd /root || exit 1
+                apt-get update && apt-get install -y awscli
+                export AWS_DEFAULT_REGION=${AWS::Region}
+                until aws s3 cp --recursive s3://${ClusterName}-${AWS::AccountId}/scripts/ ./scripts; do
+                  printf "Bucket ${ClusterName}-${AWS::AccountId} has no scripts; waiting\n"
+                  sleep 5
+                done
+                bash ./scripts/init-core.sh
+                bash ./scripts/init-node-aws.sh
+              - ClusterName: !Ref ClusterName
+
+  ASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      # VPCZoneIdentifier:
+      #   - !Ref Subnet1
+      #   - !Ref Subnet2
+      LaunchConfigurationName: !Ref LaunchTemplate
+      MinSize: !Ref MinClusterSize
+      MaxSize: !Ref MaxClusterSize
+      DesiredCapacity: !Ref MinClusterSize
 
   #######
   # IAM #
@@ -265,28 +307,28 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
-          - Effect: "Allow"
+          - Effect: 'Allow'
             Principal:
               Service:
-                - "ec2.amazonaws.com"
+                - 'ec2.amazonaws.com'
             Action:
-              - "sts:AssumeRole"
+              - 'sts:AssumeRole'
       ManagedPolicyArns:
-        - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-        - "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+        - 'arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess'
       Policies:
-        - PolicyName: "KubeadmPolicy"
+        - PolicyName: 'KubeadmPolicy'
           PolicyDocument:
-            Version: "2012-10-17"
+            Version: '2012-10-17'
             Statement:
-              - Effect: "Allow"
+              - Effect: 'Allow'
                 Action:
-                  - "s3:Head*"
-                  - "s3:List*"
-                Resource: "*"
-              - Effect: "Allow"
+                  - 's3:Head*'
+                  - 's3:List*'
+                Resource: '*'
+              - Effect: 'Allow'
                 Action:
                   - "s3:GetObject"
                   - "s3:PutObject"
