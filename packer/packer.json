@@ -1,0 +1,170 @@
+{
+  "builders": [
+
+    {
+      "boot_command": [
+        "<esc><wait>",
+        "install ",
+        "preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg ",
+        "debian-installer=en_US ",
+        "auto ",
+        "locale=en_US ",
+        "kbd-chooser/method=us ",
+        "keyboard-configuration/xkb-keymap=us ",
+        "netcfg/get_hostname={{ .Name }} ",
+        "netcfg/get_domain=packer ",
+        "fb=false ",
+        "debconf/frontend=noninteractive ",
+        "console-setup/ask_detect=false ",
+        "console-keymaps-at/keymap=us ",
+        "<enter>"
+      ],
+      "boot_wait": "3s",
+      "cpus": 2,
+      "disk_interface": "virtio-scsi",
+      "disk_size": 10240,
+      "headless": false,
+      "http_directory": "http",
+      "iso_checksum": "file:http://cdimage.debian.org/cdimage/release/{{user `os_version`}}/amd64/iso-cd/SHA512SUMS",
+      "iso_url": "http://cdimage.debian.org/cdimage/release/{{user `os_version`}}/amd64/iso-cd/debian-{{user `os_version`}}-amd64-netinst.iso",
+      "memory": 2048,
+      "output_directory": "output-qemu-{{user `node_type`}}",
+      "shutdown_command": "echo 'packer' | sudo -S shutdown -P now",
+      "ssh_password": "packer",
+      "ssh_port": 22,
+      "ssh_username": "packer",
+      "ssh_wait_timeout": "20m",
+      "type": "qemu",
+      "vm_name": "packer-k8s-{{user `node_type`}}-{{user `os_name`}}-{{user `os_version`}}-amd64"
+    },
+
+    {
+      "boot_command": [
+        "<esc><wait>",
+        "install ",
+        "preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg ",
+        "debian-installer=en_US ",
+        "auto ",
+        "locale=en_US ",
+        "kbd-chooser/method=us ",
+        "keyboard-configuration/xkb-keymap=us ",
+        "netcfg/get_hostname={{ .Name }} ",
+        "netcfg/get_domain=packer ",
+        "fb=false ",
+        "debconf/frontend=noninteractive ",
+        "console-setup/ask_detect=false ",
+        "console-keymaps-at/keymap=us ",
+        "<enter>"
+      ],
+      "disk_size": 16384,
+      "guest_additions_path": "VBoxGuestAdditions_{{.Version}}.iso",
+      "guest_os_type": "Linux_64",
+      "headless": false,
+      "http_directory": "http",
+      "iso_checksum": "file:http://cdimage.debian.org/cdimage/release/{{user `os_version`}}/amd64/iso-cd/SHA512SUMS",
+      "iso_url": "http://cdimage.debian.org/cdimage/release/{{user `os_version`}}/amd64/iso-cd/debian-{{user `os_version`}}-amd64-netinst.iso",
+      "output_directory": "output-virtualbox-iso-{{user `node_type`}}",
+      "shutdown_command": "echo 'packer' | sudo -S /sbin/shutdown -hP now",
+      "ssh_password": "packer",
+      "ssh_port": 22,
+      "ssh_username": "packer",
+      "ssh_wait_timeout": "20m",
+      "type": "virtualbox-iso",
+      "vboxmanage": [
+        ["modifyvm", "{{.Name}}", "--memory", "2048"],
+        ["modifyvm", "{{.Name}}", "--cpus", "2"]
+      ],
+      "virtualbox_version_file": ".vbox_version",
+      "vm_name": "packer-k8s-{{user `node_type`}}-{{user `os_name`}}-{{user `os_version`}}-amd64"
+    },
+
+    {
+      "ami_name": "packer-k8s-{{user `node_type`}}-{{user `os_name`}}-{{user `os_version`}}-{{user `os_alias`}}",
+      "ami_virtualization_type": "hvm",
+      "instance_type": "t3a.small",
+      "launch_block_device_mappings": [
+        {
+          "device_name": "/dev/xvda",
+          "volume_size": 16,
+          "volume_type": "gp2",
+          "delete_on_termination": true
+        }
+      ],
+      "source_ami_filter": {
+        "filters": {
+          "virtualization-type": "hvm",
+          "name": "*debian-{{user `os_version_major`}}-amd64-*",
+          "root-device-type": "ebs"
+        },
+        "owners": ["136693071363"],
+        "most_recent": true
+      },
+      "ssh_username": "admin",
+      "subnet_id": "{{user `builder_subnet_id`}}",
+      "temporary_iam_instance_profile_policy_document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Action": ["s3:*"],
+            "Effect": "Allow",
+            "Resource": "arn:aws:s3:::kubeadm-*"
+          }
+        ]
+      },
+      "temporary_security_group_source_cidrs": [
+        "{{user `temp_src_cidr`}}"
+      ],
+      "type": "amazon-ebs",
+      "vpc_id": "{{user `builder_vpc_id`}}"
+    }
+
+  ],
+
+  "provisioners": [
+
+    {
+      "type": "file",
+      "source": "./scripts",
+      "destination": "/tmp"
+    },
+    {
+      "type": "shell",
+      "execute_command": "echo 'packer' | sudo -S bash -euo pipefail -c '{{ .Vars }} {{ .Path }}'",
+      "inline": ["cp -r /tmp/scripts /root/scripts"]
+    },
+    {
+      "type": "shell",
+      "execute_command": "echo 'packer' | sudo -S bash -euo pipefail -c '{{ .Vars }} {{ .Path }}'",
+      "inline": ["bash /root/scripts/init-core.sh"],
+      "environment_vars": [
+        "cri={{user `cri`}}",
+        "node_type={{user `node_type`}}",
+        "platform={{user `platform`}}",
+        "pod_network_cidr={{user `pod_network_cidr`}}"
+      ]
+    },
+
+    {
+      "type": "file",
+      "source": "scripts/set-iface.sh",
+      "destination": "/tmp/set-iface.sh",
+      "only": ["virtualbox-iso", "qemu"]
+    },
+    {
+      "type": "shell",
+      "execute_command": "echo 'packer' | sudo -S bash -euo pipefail -c '{{ .Vars }} {{ .Path }}'",
+      "inline": [
+        "cp /tmp/set-iface.sh /usr/local/bin/set-iface.sh",
+        "bash /usr/local/bin/set-iface.sh"
+      ],
+      "only": ["virtualbox-iso", "qemu"]
+    }
+
+  ],
+
+  "post-processors": [
+    {
+      "type": "manifest"
+    }
+  ]
+}

@@ -1,89 +1,268 @@
-AWSTemplateFormatVersion: "2010-09-09"
-Description: "kubeadm"
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'kubeadm'
 
-# Parameters:
-#   KeyName:
-#     ConstraintDescription: "Must be the name of an existing EC2 KeyPair."
-#     Description: "Name of an existing EC2 KeyPair to enable SSH access to the instance(s)"
-#     Type: "AWS::EC2::KeyPair::KeyName"
+Parameters:
+  ControlPlaneAmiId:
+    Description: AMI ID of the Control Plane node(s)
+    Type: String
+  WorkerAmiId:
+    Description: AMI ID of the Worker node(s)
+    Type: String
+  WorkerNodeCount:
+    Description: How many worker nodes to deploy to the cluster
+    Type: Number
+    Default: 1
+  InstanceType:
+    Description: EC2 instance type for all nodes
+    Type: String
+    Default: t3a.small
+  VPCCidr:
+    Description: CIDR block for the kubeadm VPC
+    Type: String
+    Default: '10.0.0.0/16'
+  PublicSubnet1Cidr:
+    Description: CIDR block for the first public subnet
+    Type: String
+    Default: '10.0.1.0/25'
+  PublicSubnet2Cidr:
+    Description: CIDR block for the second public subnet
+    Type: String
+    Default: '10.0.1.128/25'
+  PrivateSubnet1Cidr:
+    Description: CIDR block for the first private subnet
+    Type: String
+    Default: '10.0.2.0/25'
+  PrivateSubnet2Cidr:
+    Description: CIDR block for the second private subnet
+    Type: String
+    Default: '10.0.2.128/25'
+
 
 Resources:
+
+  #################
+  # VPC Resources #
+  #################
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCidr
+      Tags:
+        - Key:   'Name'
+          Value: 'kubeadm-vpc'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet1Cidr
+      MapPublicIpOnLaunch: 'true'
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet2Cidr
+      MapPublicIpOnLaunch: 'true'
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnet1NetworkAclAssociation:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      NetworkAclId: !GetAtt VPC.DefaultNetworkAcl
+  PublicSubnet2NetworkAclAssociation:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      NetworkAclId: !GetAtt VPC.DefaultNetworkAcl
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet1Cidr
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet2Cidr
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnet1NetworkAclAssociation:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      NetworkAclId: !GetAtt VPC.DefaultNetworkAcl
+  PrivateSubnet2NetworkAclAssociation:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      NetworkAclId: !GetAtt VPC.DefaultNetworkAcl
+
+  # Private subnets also need a NAT Gateway, which also needs an EIP
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+  EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Domain: vpc
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref NATGateway
+
 
   #################
   # EC2 Resources #
   #################
   ControlPlane:
-    Type: "AWS::EC2::Instance"
+    Type: AWS::EC2::Instance
     Properties: 
-      ImageId: "ami-06817f01dcc7f30be" # Latest Ubuntu 18.04 in us-east-2; https://cloud-images.ubuntu.com/locator/ec2/
-      InstanceType: t3a.small
-      # KeyName: !Ref KeyName
-      # SecurityGroupIds:
-      #   - !ImportValue 
-      # SubnetId: !ImportValue vpc-PublicSubnetID
+      ImageId: !Ref ControlPlaneAmiId
+      InstanceType: !Ref InstanceType
       IamInstanceProfile: !Ref KubeadmInstanceProfile
+      SecurityGroupIds:
+        - !Ref ControlPlaneSG
+      # This *would* be PrivateSubnet1, but ca-central freaked out on me (it's
+      # got a fourth placeholder AZ that's not real as of the time of this
+      # writing)
+      SubnetId: !Ref PrivateSubnet2
       Tags:
-        - Key:   "Name"
-          Value: "kubeadm-control-plane"
-      UserData:
-        Fn::Base64:
-          !Sub |
-          #!/usr/bin/env bash
-          cd /root || exit 1
-          apt-get update && apt-get install -y awscli
-          export AWS_DEFAULT_REGION=${AWS::Region}
-          export POD_NETWORK_CIDR=$(aws ec2 describe-vpcs --filters 'Name=isDefault,Values=true' --query 'Vpcs[*].CidrBlock' --output text)
-          until aws s3 cp --recursive s3://kubeadm-${AWS::AccountId}/scripts/ ./scripts; do
-            printf "Bucket kubeadm-${AWS::AccountId} has no scripts; waiting\n"
-            sleep 5
-          done
-          bash ./scripts/init-core.sh
-          bash ./scripts/init-control-plane.sh
-          # Regenerate token, grab CA cert hash, and push to S3 for Nodes to use
-          kubeadm token create > ./token
-          aws s3 cp ./token s3://kubeadm-${AWS::AccountId}/token
-          openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt \
-            | openssl rsa -pubin -outform der 2>/dev/null \
-            | openssl dgst -sha256 -hex \
-            | sed 's/^.* //' \
-          > ./hash
-          aws s3 cp ./hash s3://kubeadm-${AWS::AccountId}/hash
+        - Key:   'Name'
+          Value: 'kubeadm-control-plane'
+  
+  WorkerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: kubeadm-worker-lt
+      LaunchTemplateData:
+        ImageId: !Ref WorkerAmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Name: !Ref KubeadmInstanceProfile
+        SecurityGroupIds:
+          - !Ref WorkerSG
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key:   'Name'
+                Value: 'kubeadm-worker'
+        UserData:
+          Fn::Base64:
+            !Sub |
+              #!/usr/bin/env bash
+              bash /root/scripts/init-worker-aws.sh
 
-
-  Node:
-    Type: "AWS::EC2::Instance"
+  WorkerASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
     DependsOn: ControlPlane
-    Properties: 
-      ImageId: "ami-06817f01dcc7f30be" # Latest Ubuntu 18.04 in us-east-2; https://cloud-images.ubuntu.com/locator/ec2/
-      InstanceType: t3a.small
-      # KeyName: !Ref KeyName
-      # SecurityGroupIds:
-      #   - !ImportValue 
-      # SubnetId: !ImportValue vpc-PublicSubnetID
-      IamInstanceProfile: !Ref KubeadmInstanceProfile
-      Tags:
-        - Key:   "Name"
-          Value: "kubeadm-node"
-      UserData:
-        Fn::Base64:
-          !Sub |
-            #!/usr/bin/env bash
-            cd /root || exit 1
-            apt-get update && apt-get install -y awscli
-            export AWS_DEFAULT_REGION=${AWS::Region}
-            until aws s3 cp --recursive s3://kubeadm-${AWS::AccountId}/scripts/ ./scripts; do
-              printf "Bucket kubeadm-${AWS::AccountId} has no scripts; waiting\n"
-              sleep 5
-            done
-            bash ./scripts/init-core.sh
-            bash ./scripts/init-node-aws.sh
+    Properties:
+      AutoScalingGroupName: kubeadm-worker-asg
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WorkerLaunchTemplate
+        Version: !GetAtt WorkerLaunchTemplate.LatestVersionNumber
+      Cooldown: 10
+      # Currently all pegged as the same value, for now
+      DesiredCapacity: !Ref WorkerNodeCount
+      MinSize: !Ref WorkerNodeCount
+      MaxSize: !Ref WorkerNodeCount
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  ControlPlaneSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'kubeadm SG for Control Plane nodes'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref VPCCidr
+        - IpProtocol: tcp
+          FromPort: 6443
+          ToPort: 6443
+          CidrIp: !Ref VPCCidr
+        - IpProtocol: tcp
+          FromPort: 2379
+          ToPort: 2380
+          CidrIp: !Ref VPCCidr
+        - IpProtocol: tcp
+          FromPort: 10250
+          ToPort: 10252
+          CidrIp: !Ref VPCCidr
+        
+  WorkerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'kubeadm SG for Worker nodes'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref VPCCidr
+        - IpProtocol: tcp
+          FromPort: 10250
+          ToPort: 10250
+          CidrIp: !Ref VPCCidr
+        - IpProtocol: tcp
+          FromPort: 30000
+          ToPort: 32767
+          CidrIp: !Ref VPCCidr
 
 
   #######
   # IAM #
   #######
   KubeadmRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -111,46 +290,21 @@ Resources:
                 Action:
                   - "s3:GetObject"
                   - "s3:PutObject"
-                Resource: !Sub
-                  - "${BucketArn}/*"
-                  - { BucketArn: !GetAtt Bucket.Arn }
+                Resource: !Sub "arn:aws:s3:::kubeadm-${AWS::AccountId}/*"
               - Effect: "Allow"
                 Action:
                   - "logs:*"
-                Resource: !Sub
-                  - "${LogGroupArn}"
-                  - { LogGroupArn: !GetAtt LogGroup.Arn }
+                Resource: !Sub "${LogGroup.Arn}"
               - Effect: "Allow"
                 Action:
                   - "logs:*"
-                Resource: !Sub
-                  - "${LogGroupArn}/*"
-                  - { LogGroupArn: !GetAtt LogGroup.Arn }
+                Resource: !Sub "${LogGroup.Arn}/*"
   
   KubeadmInstanceProfile:
-    Type: "AWS::IAM::InstanceProfile"
+    Type: AWS::IAM::InstanceProfile
     Properties:
       Roles:
         - !Ref KubeadmRole
-
-
-  #########################
-  # S3 Bucket for helpers #
-  #########################
-  Bucket:
-    Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
-    Properties:
-      BucketName: !Sub "kubeadm-${AWS::AccountId}"
-      # VersioningConfiguration:
-      #   Status: Enabled
-      # LifecycleConfiguration:
-      #   Rules:
-      #     - Status: Enabled
-      #       Id: Delete stale data
-      #       NoncurrentVersionExpirationInDays: 3
-      #       AbortIncompleteMultipartUpload:
-      #         DaysAfterInitiation: 1
 
 
   ###########
@@ -159,15 +313,15 @@ Resources:
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties: 
-      LogGroupName: "/aws/ec2/kubeadm"
+      LogGroupName: '/aws/ec2/kubeadm'
       RetentionInDays: 7
   LogStreamControlPlane:
     Type: AWS::Logs::LogStream
     Properties:
       LogGroupName: !Ref LogGroup
-      LogStreamName: "control-plane"
-  LogStreamNodes:
+      LogStreamName: 'control-plane'
+  LogStreamWorkers:
     Type: AWS::Logs::LogStream
     Properties:
       LogGroupName: !Ref LogGroup
-      LogStreamName: "nodes"
+      LogStreamName: 'workers'
