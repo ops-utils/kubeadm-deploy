@@ -1,4 +1,18 @@
 {
+  "variables": {
+    "aws_builder_subnet_id": null,
+    "aws_builder_vpc_id": null,
+    "cluster_name": null,
+    "cri": "docker",
+    "node_type": null,
+    "os_alias": "buster",
+    "os_name": "debian",
+    "os_version_major": "10",
+    "os_version": "10.7.0",
+    "platform": null,
+    "pod_network_cidr": null,
+    "temp_src_cidr": null
+  },
   "builders": [
 
     {
@@ -100,7 +114,7 @@
         "most_recent": true
       },
       "ssh_username": "admin",
-      "subnet_id": "{{user `builder_subnet_id`}}",
+      "subnet_id": "{{user `aws_builder_subnet_id`}}",
       "temporary_iam_instance_profile_policy_document": {
         "Version": "2012-10-17",
         "Statement": [
@@ -115,7 +129,7 @@
         "{{user `temp_src_cidr`}}"
       ],
       "type": "amazon-ebs",
-      "vpc_id": "{{user `builder_vpc_id`}}"
+      "vpc_id": "{{user `aws_builder_vpc_id`}}"
     }
 
   ],
