@@ -11,7 +11,7 @@ systemctl enable amazon-ssm-agent
 systemctl is-enabled amazon-ssm-agent
 systemctl is-active amazon-ssm-agent
 
-printf "Initializing Worker for platform 'aws'...\n" "${platform:-}" > /dev/stderr
+printf "Initializing Worker for platform 'aws'...\n" > /dev/stderr
 
 # Detect if Packer is building this image (using a Packer var we pass in only at
 # build time); if so, relegate the script invocation to the worker EC2 userdata
