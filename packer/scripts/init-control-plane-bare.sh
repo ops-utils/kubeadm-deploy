@@ -15,6 +15,8 @@ set -euo pipefail
 # Run the core init script
 bash ./init-control-plane.sh
 
+printf "Initializing Control Plane for platform 'bare'...\n" > /dev/stderr
+
 cat <<EOF > /etc/systemd/system/kubeadm-join.service
 [Unit]
 Description=HTTP server helper for joining nodes to this kubeadm cluster
@@ -27,5 +29,8 @@ RestartSec=1s
 [Install]
 WantedBy=multi-user.target
 EOF
+
+systemctl daemon-reload
+systemctl enable kubeadm-join.service
 
 exit 0

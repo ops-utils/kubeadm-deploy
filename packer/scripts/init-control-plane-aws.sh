@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+printf "Initializing Control Plane for platform 'aws'...\n" > /dev/stderr
+
 # SSM agent isn't installed on AWS Debian AMIs, so install it here. Do this
 # first, so it's reachable if something else breaks. us-east-1 is just the
 # endpoint; nothing's configured for that region specifically
@@ -28,8 +30,6 @@ export HOME="${HOME:-/root}"
 
 # Run the core init script first
 bash ./init-control-plane.sh
-
-printf "Initializing Control Plane for platform 'aws'...\n" > /dev/stderr
 
 apt-get update && apt-get install -y awscli
 

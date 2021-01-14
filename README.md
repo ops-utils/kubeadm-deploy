@@ -1,15 +1,16 @@
 Deployer utilities for `kubeadm`
 ================================
 
-Deployment wrappers for the
+Deployment wrapper for the
 [kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm)
 bootstrapper for [Kubernetes](https://kubernetes.io) clusters.
 
-This is an "easy" way to deploy `kubeadm`, especially for the examples that
-include infracode to help manage . If you don't understand what `kubeadm` is
-for, or what these scripts are doing, ***do not use these helpers!***. Read
-through each script, and understand what it's doing & what it's asking for
-before you blindly run this stuff in production.
+This is an "easy" way to get `kubeadm` installed on both control plane node(s)
+and worker nodes, especially for the examples that include infracode to help
+manage . If you don't understand what `kubeadm` is for, or what these scripts
+are doing, ***do not use these helpers!***. Read through each script, and
+understand what it's doing & what it's asking for before you blindly run this
+stuff in production.
 
 Any script not containing a public cloud provider's acronym (e.g. `aws`) in the
 filename is intended to be a generic script for any deployment on any host(s).

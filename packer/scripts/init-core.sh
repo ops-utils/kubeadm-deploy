@@ -89,8 +89,12 @@ lock-versions() {
 
 edit-iptables() {
   printf "\nChanging some settings for iptables...\n\n" > /dev/stderr && sleep 2
+  lsmod | grep br_netfilter || modprobe br_netfilter
   printf "br_netfilter\n" > /etc/modules-load.d/k8s.conf
-  printf "net.bridge.bridge-nf-call-ip6tables = 1\nnet.bridge.bridge-nf-call-iptables = 1\n" > /etc/sysctl.d/k8s.conf
+  {
+    printf "net.bridge.bridge-nf-call-iptables = 1\n"
+    printf "net.bridge.bridge-nf-call-ip6tables = 1\n"
+  } > /etc/sysctl.d/k8s.conf
   sysctl --system
 }
 

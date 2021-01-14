@@ -37,9 +37,9 @@ create-s3-bucket:
 	@printf "Done\n"
 
 delete-s3-bucket:
-	@printf "Removing S3 bucket %s...\n" $(BUCKET_NAME) && \
-	aws s3 rm --recursive $(BUCKET_NAME)
-	aws s3 rb $(BUCKET_NAME)
+	@printf "Removing S3 bucket %s...\n" $(BUCKET_NAME)
+	@aws s3 rm --recursive $(BUCKET_NAME)
+	@aws s3 rb $(BUCKET_NAME)
 	@printf "Done\n"
 
 # Use SSM Session Manager to connect to your cluster nodes by nametag

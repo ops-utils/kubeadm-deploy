@@ -27,10 +27,9 @@ echo "export KUBECONFIG=/etc/kubernetes/admin.conf" >> /root/.bashrc
 source "/root/.bashrc"
 
 # Install a "network fabric" (k8s says it is "CNI-agnostic", so you need to
-# choose & install your own container network interface). Here I chose Flannel
-# since it doesn't run as an Operator by default, which at the time of this
-# writing was a slightly newer k8s feature
-kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+# choose & install your own container network interface).
+# kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
 
 # Allow Pods to be scheduled on the control plane; don't do this in prod, but if
 # you just want a single-node k8s cluster, then run the following (even
