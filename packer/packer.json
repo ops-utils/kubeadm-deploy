@@ -155,7 +155,8 @@
         "cri={{user `cri`}}",
         "node_type={{user `node_type`}}",
         "platform={{user `platform`}}",
-        "pod_network_cidr={{user `pod_network_cidr`}}"
+        "pod_network_cidr={{user `pod_network_cidr`}}",
+        "subnet={{user `subnet`}}"
       ]
     },
 

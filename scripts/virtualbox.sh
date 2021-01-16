@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Set number of workers based on the second CLI arg; defaults to 1 if not provided
+# worker_count="${2:-1}"
+
 if [[ "${1:-}" == "up" ]]; then
 
   vboxmanage natnetwork add \
@@ -10,6 +13,7 @@ if [[ "${1:-}" == "up" ]]; then
     --enable \
   || true
 
+  # for name in control-plane worker{1.."${worker_count}"}; do
   for name in control-plane worker; do
     vboxmanage createvm \
       --name k8s-"${name}" \
@@ -25,7 +29,6 @@ if [[ "${1:-}" == "up" ]]; then
       --nic1 natnetwork \
       --nat-network1 k8sNatNetwork \
     || true
-    #  --nicproperty1 name=k8sNatNetwork \
     
     vboxmanage storageattach k8s-"${name}" \
       --storagectl IDE \
@@ -42,6 +45,7 @@ if [[ "${1:-}" == "up" ]]; then
 
 elif [[ "${1:-}" == "down" ]]; then
 
+  # for name in control-plane worker{1.."${worker_count}"}; do
   for name in control-plane worker; do
 
     # 'none' medium removes the device, so we can delete the VM and all the
