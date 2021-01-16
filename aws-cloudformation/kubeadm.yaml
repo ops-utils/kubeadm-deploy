@@ -21,6 +21,16 @@ Parameters:
     Description: EC2 instance type for all nodes
     Type: String
     Default: t3a.small
+  PodNetworkCidr:
+    Description: |
+      Network CIDR for the Cluster's Pods. This CIDR range MUST NOT overlap with
+      your VPC/Subnet CIDR ranges -- e.g. if your VPC CIDR is '10.0.0.0/16', and
+      a Subnet is '10.0.2.0/24', your PodNetworkCidr should be something like
+      '10.<not-0>.0.0/16'. Some CNIs recommend certain ranges specifically. This
+      parameter defaults to '10.244.0.0/16', which is what the Flannel CNI
+      recommends.
+    Type: String
+    Default: '10.244.0.0/16'
 
 
 Resources:
@@ -38,13 +48,11 @@ Resources:
         - !Ref ControlPlaneSG
       SubnetId: { Fn::ImportValue: !Sub '${ClusterName}-vpc-PrivateSubnet1Id' }
       UserData:
-        Fn::Base64: !Sub
-          - |
-            #!/usr/bin/env bash
-            export cluster_name="${ClusterName}"
-            export pod_network_cidr="${pod_network_cidr}"
-            bash /root/scripts/init-control-plane-aws.sh
-          - pod_network_cidr: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
+        Fn::Base64: !Sub |
+          #!/usr/bin/env bash
+          export cluster_name="${ClusterName}"
+          export pod_network_cidr="${PodNetworkCidr}"
+          bash /root/scripts/init-control-plane-aws.sh
       Tags:
         - Key:   'Name'
           Value: !Sub '${ClusterName}-control-plane'

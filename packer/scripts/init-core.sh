@@ -21,8 +21,10 @@ init-sys-packages() {
   printf "\nInstalling system packages...\n\n" > /dev/stderr && sleep 2
   apt-get install -y \
     apt-transport-https \
+    bash-completion \
     ca-certificates \
     curl \
+    dnsutils \
     gnupg-agent \
     htop \
     jq \
@@ -62,6 +64,7 @@ init-cri() {
     return 1
   fi
   apt-wipe
+  systemctl restart docker
   command -v docker || return 1
 }
 
@@ -114,19 +117,19 @@ main() {
   disable-swap
 
   apt-wipe
+
+  # Now, fork remaining logic based on target platform
+  if [[ "${node_type:-undefined_node_type}" == "control-plane" ]]; then
+    bash ./init-control-plane-"${platform:-undefined_platform}".sh
+  elif [[ "${node_type:-undefined_node_type}" == "worker" ]]; then
+    bash ./init-worker-"${platform:-undefined_platform}".sh
+  else
+    printf "\nYou have not provided a 'node_type' variable to the build! Exiting.\n\n" > /dev/stderr
+    exit 1
+  fi
 }
 
+
 main
-
-
-# Now, fork remaining logic based on target platform
-if [[ "${node_type:-undefined_node_type}" == "control-plane" ]]; then
-  bash ./init-control-plane-"${platform:-undefined_platform}".sh
-elif [[ "${node_type:-undefined_node_type}" == "worker" ]]; then
-  bash ./init-worker-"${platform:-undefined_platform}".sh
-else
-  printf "\nYou have not provided a 'node_type' variable to the build! Exiting.\n\n" > /dev/stderr
-  exit 1
-fi
 
 exit 0

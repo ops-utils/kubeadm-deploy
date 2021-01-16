@@ -54,10 +54,14 @@ control_plane_ip=$(
   | grep -v None
 )
 
-# Join Cluster
-kubeadm join \
-  "${control_plane_ip}":6443 \
-  --token "$(cat /tmp/token)" \
-  --discovery-token-ca-cert-hash "sha256:$(cat /tmp/hash)"
+# Keep trying to join the Cluster
+until kubeadm join \
+        "${control_plane_ip}":6443 \
+        --token "$(cat /tmp/token)" \
+        --discovery-token-ca-cert-hash "sha256:$(cat /tmp/hash)" \
+; do
+  printf "Unable to join cluster's control plane at %s; sleeping...\n" "${control_plane_ip}" > /dev/stderr
+  sleep 15
+done
 
 exit 0

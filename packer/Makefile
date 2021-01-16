@@ -10,6 +10,7 @@ validate:
 	shellcheck scripts/*
 	packer validate \
 		-var node_type="$${node_type}" \
+		-var platform="$${platform}" \
 		-var-file vars.json \
 		packer.json
 
@@ -17,6 +18,7 @@ build: validate
 	packer build \
 		-var-file vars.json \
 		-var node_type="$${node_type}" \
+		-var platform="$${platform}" \
 		-force \
 		$(onlyflag) \
 		-- \

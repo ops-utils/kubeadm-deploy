@@ -13,7 +13,9 @@ help:
 	@printf "Review the Makefile for a list of targets. Each target will throw an error if you forgot to pass a required variable.\n"
 
 deploy-aws:
+	@make -s create-s3-bucket || true
 	@aws cloudformation deploy \
+		--no-fail-on-empty-changeset \
 		--stack-name $(STACK_NAME) \
 		--parameter-overrides \
 			$$(jq -r 'to_entries | map("\(.key)=\(.value | tostring)") | .[]' ./aws-cloudformation/vars.json) \
@@ -22,11 +24,11 @@ deploy-aws:
 		--template-file ./aws-cloudformation/"$${stack}".yaml
 
 destroy-aws:
-#	@make -s delete-s3-bucket
 	@printf "Sending stack delete request for $(STACK_NAME)...\n"
 	@aws cloudformation delete-stack --stack-name $(STACK_NAME)
 	@printf "Waiting for stack delete to complete...\n"
 	@aws cloudformation wait stack-delete-complete --stack-name $(STACK_NAME)
+	@make -s delete-s3-bucket || true
 	@printf "Done\n"
 
 # You'll need this created first for the Packer builder to build the Control Plane image
