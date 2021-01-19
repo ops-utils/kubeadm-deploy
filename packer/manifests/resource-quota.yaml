@@ -1,0 +1,13 @@
+---
+# A ResourceQuota applies to an entire Namespace, not just per-Container/Pod.
+# But, these are aggregate limits, though.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: resource-quota
+spec:
+  hard:
+    requests.cpu: 1.8
+    requests.memory: 1500Mi
+    limits.cpu: 1.9
+    limits.memory: 1750Mi

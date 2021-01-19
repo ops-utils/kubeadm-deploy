@@ -142,9 +142,17 @@
       "destination": "/tmp"
     },
     {
+      "type": "file",
+      "source": "./manifests",
+      "destination": "/tmp"
+    },
+    {
       "type": "shell",
       "execute_command": "echo 'packer' | sudo -S bash -euo pipefail -c '{{ .Vars }} {{ .Path }}'",
-      "inline": ["cp -r /tmp/scripts /root/scripts"]
+      "inline": [
+        "cp -r /tmp/scripts /root/scripts",
+        "cp -r /tmp/manifests /root/manifests"
+      ]
     },
     {
       "type": "shell",
@@ -158,22 +166,6 @@
         "pod_network_cidr={{user `pod_network_cidr`}}",
         "subnet={{user `subnet`}}"
       ]
-    },
-
-    {
-      "type": "file",
-      "source": "scripts/set-iface.sh",
-      "destination": "/tmp/set-iface.sh",
-      "only": ["virtualbox-iso", "qemu"]
-    },
-    {
-      "type": "shell",
-      "execute_command": "echo 'packer' | sudo -S bash -euo pipefail -c '{{ .Vars }} {{ .Path }}'",
-      "inline": [
-        "cp /tmp/set-iface.sh /usr/local/bin/set-iface.sh",
-        "bash /usr/local/bin/set-iface.sh"
-      ],
-      "only": ["virtualbox-iso", "qemu"]
     }
 
   ],
