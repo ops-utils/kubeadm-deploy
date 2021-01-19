@@ -38,15 +38,18 @@ if [[ "${1:-}" == "up" ]]; then
       --medium ./packer/output-virtualbox-iso-"${name}"/packer-k8s-"${name}"-debian-10.7.0-amd64-disk001.vmdk \
     || true
 
-  done
+    vboxmanage startvm k8s-"${name}" || true
 
-  # start control-plane &
-  # start worker &
+  done
 
 elif [[ "${1:-}" == "down" ]]; then
 
   # for name in control-plane worker{1.."${worker_count}"}; do
   for name in control-plane worker; do
+
+    # Poweroff and wait for it to finish/unlock
+    vboxmanage controlvm k8s-"${name}" poweroff || true
+    sleep 2
 
     # 'none' medium removes the device, so we can delete the VM and all the
     # associated files without losing the disk
@@ -62,6 +65,7 @@ elif [[ "${1:-}" == "down" ]]; then
   
   done
   
+  sed -i '/HardDisk/d' ~/.config/VirtualBox/VirtualBox.xml
   rm -rf "${HOME}"/k8s-vms
 
 else

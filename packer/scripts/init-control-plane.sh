@@ -24,6 +24,8 @@ chmod 777 /etc/kubernetes/admin.conf
   echo "alias kdn='kubectl describe nodes'"
   echo 'source <(kubectl completion bash)'
   echo "complete -F __start_kubectl k" # this is so shell completion works with the main alias
+  # shellcheck disable=SC2016
+  echo '[[ "${TERM}" != "screen" ]] && exec tmux' # tmux runs at shell launch; THIS NEEDS TO BE LAST
 } >> /root/.bashrc
 
 # shellcheck disable=SC1091

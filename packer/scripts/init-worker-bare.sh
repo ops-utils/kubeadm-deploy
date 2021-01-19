@@ -11,7 +11,7 @@ sed -i "s;SUBNET_PLACEHOLDER;${subnet:-};g" init-worker-bare-atboot.sh
 # Make a cron job entry that runs every reboot, but should remove itself on
 # first run
 cat <<EOF > /etc/cron.d/init-k8s-worker-atboot
-@reboot root bash "$(dirname "$0")"/init-worker-bare-atboot.sh
+* * * * * root bash /root/scripts/init-worker-bare-atboot.sh >> /var/log/init-k8s-worker-atboot.log 2>&1
 EOF
 
 printf \

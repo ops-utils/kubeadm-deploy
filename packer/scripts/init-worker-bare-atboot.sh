@@ -10,19 +10,24 @@ trim() {
   sed -E 's/\s\s+//g' <("$@")
 }
 
-nmap -p8000 -- "${subnet}" \
-| grep -B4 -E '8000/tcp\s+open' \
-| grep 'scan report' \
-| grep -o -E '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' \
-> /tmp/netscan || {
-  trim printf "\
-    ERROR: Could not find any running hosts on subnet %s with open port 8000.
-    You may want to confirm the control plane is running and broadcasting.
-    Exiting cleanly, so you can try again later from this node.\n" \
-  "${subnet}" \
-   >> /root/kubeadm-join.log 2>&1
-  exit 0
-}
+# Try a few times
+for try in {1..10}; do
+  printf "Try %s of 10 when looking for control plane...\n" "${try}"
+  nmap -p8000 -- "${subnet}" \
+  | grep -B4 -E '8000/tcp\s+open' \
+  | grep 'scan report' \
+  | grep -o -E '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' \
+  > /tmp/netscan || {
+    trim printf "\
+      ERROR: Could not find any running hosts on subnet %s with open port 8000.\n" \
+    "${subnet}" \
+    > /dev/stderr
+    continue
+  }
+  break
+done
+
+[[ "$(wc -l < /tmp/netscan)" -gt 0 ]]
 
 while read -r host; do
   for filename in token hash; do
@@ -32,7 +37,7 @@ while read -r host; do
         The host is probably up (since it was checked a few seconds ago), but the file isn't there.
         Either skipping this host, or exiting cleanly, so you can try again later from this node.\n" \
         "${filename}" "${host}" \
-      >> /root/kubeadm-join.log 2>&1
+      > /dev/stderr
       continue
     }
     control_plane_ip="${host}"
@@ -45,7 +50,7 @@ until kubeadm join \
         --token "$(cat /tmp/token)" \
         --discovery-token-ca-cert-hash "sha256:$(cat /tmp/hash)" \
 ; do
-  printf "Unable to join cluster's control plane at %s; sleeping...\n" "${control_plane_ip}" >> /root/kubeadm-join.log 2>&1
+  printf "Unable to join cluster's control plane at %s; sleeping...\n" "${control_plane_ip}" > /dev/stderr
   sleep 15
 done
 
