@@ -6,7 +6,7 @@ metadata:
   labels:
     app: nginx
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: nginx
@@ -33,6 +33,7 @@ kind: Service
 metadata:
   name: nginx
 spec:
+  type: LoadBalancer # This'll work if you set up an LB Service -- k3s comes with one, for example
   selector:
     app: nginx
   ports:
@@ -52,20 +53,20 @@ spec:
   minReplicas: 1
   maxReplicas: 10
   targetCPUUtilizationPercentage: 50
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 0
-      policies:
-        - type: Percent
-          value: 100
-          periodSeconds: 15
-        - type: Pods
-          value: 4
-          periodSeconds: 15
-    scaleDown:
-      stabilizationWindowSeconds: 30
-      policies:
-        - type: Percent
-          value: 100
-          periodSeconds: 15
-      selectPolicy: Max
+  # behavior:
+  #   scaleUp:
+  #     stabilizationWindowSeconds: 0
+  #     policies:
+  #       - type: Percent
+  #         value: 100
+  #         periodSeconds: 15
+  #       - type: Pods
+  #         value: 4
+  #         periodSeconds: 15
+  #   scaleDown:
+  #     stabilizationWindowSeconds: 30
+  #     policies:
+  #       - type: Percent
+  #         value: 100
+  #         periodSeconds: 15
+  #     selectPolicy: Max

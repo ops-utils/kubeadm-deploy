@@ -114,36 +114,37 @@ disable-swap() {
 }
 
 init-k3s() {
-  printf "Will not initialize k3s control plane during core init; will do it during its dedicated init phase\n" > /dev/stderr
+  printf "Will not initialize k3s node during core init; will do it during its dedicated init phase\n" > /dev/stderr
 }
 
 main() {
   init-sys-packages
 
-  if [[ "${k8s_distro:-}" == "kubeadm" ]]; then
-    init-cri "${cri:-}"
-    init-kubeadm
-    lock-versions
-    edit-iptables
-    disable-swap
-  elif [[ "${k8s_distro:-}" == "k3s" ]]; then
-    init-k3s
-  else
-    printf "ERROR: Invalid k8s_distro var provided. Exiting.\n" > /dev/stderr
-    exit 1
-  fi
+  case "${k8s_distro:-}" in
+
+    k3s)
+      init-k3s
+    ;;
+
+    kubeadm)
+      init-cri "${cri:-}"
+      init-kubeadm
+      lock-versions
+      edit-iptables
+      disable-swap
+    ;;
+
+    *)
+      printf "ERROR: Invalid k8s_distro var provided. Exiting.\n" > /dev/stderr
+      exit 1
+    ;;
+  
+  esac
 
   apt-wipe
 
-  # Now, fork remaining logic based on target platform
-  if [[ "${node_type:-undefined_node_type}" == "control-plane" ]]; then
-    bash ./init-control-plane-"${platform:-undefined_platform}".sh
-  elif [[ "${node_type:-undefined_node_type}" == "worker" ]]; then
-    bash ./init-worker-"${platform:-undefined_platform}".sh
-  else
-    printf "\nYou have not provided a 'node_type' variable to the build! Exiting.\n\n" > /dev/stderr
-    exit 1
-  fi
+  # Now, fork remaining logic based on node type & target platform
+  bash ./init-"${node_type:-undefined_node_type}"-"${platform:-undefined_platform}".sh
 }
 
 

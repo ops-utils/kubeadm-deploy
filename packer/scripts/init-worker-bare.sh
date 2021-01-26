@@ -4,6 +4,27 @@ set -euo pipefail
 # Make sure you're in a spot to run/source other scripts from the same workdir
 cd "$(dirname "$0")" || exit 1
 
+
+
+cat <<EOF > /etc/systemd/system/k8s-joiner.service
+[Unit]
+Description=Helper for joining nodes to a Kubernetes cluster
+
+[Service]
+ExecStart=
+Restart=always
+RestartSec=1s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable k8s-joiner.service
+systemctl is-enabled k8s-joiner.service
+
+
+
 # Need to interpolate the currently-visible Subnet for the at-boot
 # script
 sed -i "s;SUBNET_PLACEHOLDER;${subnet:-};g" init-worker-bare-atboot.sh

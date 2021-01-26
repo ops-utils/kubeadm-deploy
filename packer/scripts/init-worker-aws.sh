@@ -32,36 +32,56 @@ export AWS_DEFAULT_REGION
 # safe and set it here
 export HOME="${HOME:-/root}"
 
-# Wait for cluster token & hash to be available, then grab them
-until aws s3 cp "s3://${cluster_name:-NO_CLUSTER_NAME_SPECIFIED}-${AWS_ACCOUNT_NUMBER}/token" /tmp/token; do
-  printf "Cluster token is not yet ready; sleeping\n"
-  sleep 15
+# Wait for S3 cluster files to be available, then grab them
+for i in control-plane-address token hash; do
+  until aws s3 cp "s3://${cluster_name:-NO_CLUSTER_NAME_SPECIFIED}-${AWS_ACCOUNT_NUMBER}/${i}" /tmp/"${i}"; do
+    printf "%s is not yet ready in S3; sleeping\n" "${i}"
+    sleep 15
+  done
 done
 
-until aws s3 cp "s3://${cluster_name:-NO_CLUSTER_NAME_SPECIFIED}-${AWS_ACCOUNT_NUMBER}/hash" /tmp/hash; do
-  printf "Cluster hash is not yet ready; sleeping\n"
-  sleep 15
-done
-
-# Find control plane IP
-control_plane_ip=$(
-  aws ec2 describe-instances \
-    --filters \
-      "Name=tag:Name,Values=${cluster_name:-NO_CLUSTER_NAME_SPECIFIED}-control-plane" \
-      'Name=instance-state-name,Values=running' \
-    --query 'Reservations[*].Instances[*].[PrivateIpAddress]' \
-    --output text \
-  | grep -v None
-)
 
 # Keep trying to join the Cluster
-until kubeadm join \
-        "${control_plane_ip}":6443 \
+joinerr() {
+  printf "Unable to join cluster's control plane at %s; sleeping...\n" "$(cat control-plane-address)" > /dev/stderr
+  sleep 15
+}
+
+while true; do
+
+  case "${k8s_distro:-NOT_SET}" in
+
+    k3s)
+      curl -fsSL -o /tmp/install.sh https://get.k3s.io
+      sh /tmp/install.sh agent \
+        --server https://"$(cat /tmp/control-plane-address)":6443 \
+        --token-file /tmp/token \
+      || {
+        joinerr
+        continue
+      }
+    ;;
+
+    kubeadm)
+      kubeadm join \
+        "$(cat /tmp/control-plane-address)":6443 \
         --token "$(cat /tmp/token)" \
         --discovery-token-ca-cert-hash "sha256:$(cat /tmp/hash)" \
-; do
-  printf "Unable to join cluster's control plane at %s; sleeping...\n" "${control_plane_ip}" > /dev/stderr
-  sleep 15
+      || {
+        joinerr
+        continue
+      }
+    ;;
+
+    *)
+      printf "ERROR: Bad KubernetesDistro/k8s_distro variable (%s) -- cannot init\n" "${k8s_distro}" > /dev/stderr
+      exit 1
+    ;;
+
+  esac
+
+  break
+
 done
 
 exit 0

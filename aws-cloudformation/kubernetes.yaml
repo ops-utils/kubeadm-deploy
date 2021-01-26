@@ -1,36 +1,43 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'kubeadm'
+Description: 'Kubernetes Cluster'
 
 Parameters:
   ClusterName:
-    Description: |
-      Easily-identifiable name for your cluster. Defaults to "kubeadm-my-cluster"
+    Description: Easily-identifiable name for your cluster. Defaults to 'k8s'.
     Type: String
-    Default: 'kubeadm-my-cluster'
+    Default: 'k8s'
   ControlPlaneAmiId:
     Description: AMI ID of the Control Plane node(s)
     Type: String
-  WorkerAmiId:
-    Description: AMI ID of the Worker node(s)
-    Type: String
-  WorkerNodeCount:
-    Description: How many worker nodes to deploy to the cluster
-    Type: Number
-    Default: 1
   InstanceType:
     Description: EC2 instance type for all nodes
     Type: String
     Default: t3a.small
+  KubernetesDistro:
+    Description: Shorthand name for the chosen Kubernetes distribution
+    Type: String
+    AllowedValues:
+      - k3s
+      - kubeadm
   PodNetworkCidr:
     Description: |
-      Network CIDR for the Cluster's Pods. This CIDR range MUST NOT overlap with
-      your VPC/Subnet CIDR ranges -- e.g. if your VPC CIDR is '10.0.0.0/16', and
-      a Subnet is '10.0.2.0/24', your PodNetworkCidr should be something like
-      '10.<not-0>.0.0/16'. Some CNIs recommend certain ranges specifically. This
-      parameter defaults to '10.244.0.0/16', which is what the Flannel CNI
-      recommends.
+      Network CIDR for the Cluster's Podsm if applicable. Will always be passed
+      in as an env var for control plane user data, but may or may not be used
+      depending on your init script configuration for that AMI. This CIDR range
+      MUST NOT overlap with your VPC/Subnet CIDR ranges -- e.g. if your VPC CIDR
+      is '10.0.0.0/16', and a Subnet is '10.0.2.0/24', your PodNetworkCidr
+      should be something like '10.<not-0>.0.0/16'. Some CNIs recommend certain
+      ranges specifically. This parameter defaults to '10.244.0.0/16', which is
+      what the Flannel CNI recommends.
     Type: String
     Default: '10.244.0.0/16'
+  WorkerAmiId:
+    Description: AMI ID of the Worker node(s)
+    Type: String
+  WorkerNodeCount:
+    Description: How many worker nodes to deploy to the cluster. Defaults to 1.
+    Type: Number
+    Default: 1
 
 
 Resources:
@@ -43,7 +50,7 @@ Resources:
     Properties: 
       ImageId: !Ref ControlPlaneAmiId
       InstanceType: !Ref InstanceType
-      IamInstanceProfile: !Ref KubeadmInstanceProfile
+      IamInstanceProfile: !Ref KubernetesInstanceProfile
       SecurityGroupIds:
         - !Ref ControlPlaneSG
       SubnetId: { Fn::ImportValue: !Sub '${ClusterName}-vpc-PrivateSubnet1Id' }
@@ -51,6 +58,7 @@ Resources:
         Fn::Base64: !Sub |
           #!/usr/bin/env bash
           export cluster_name="${ClusterName}"
+          export k8s_distro="${KubernetesDistro}"
           export pod_network_cidr="${PodNetworkCidr}"
           bash /root/scripts/init-control-plane-aws.sh
       Tags:
@@ -60,31 +68,32 @@ Resources:
   WorkerLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
     Properties:
-      LaunchTemplateName: kubeadm-worker-lt
+      LaunchTemplateName: kubernetes-worker-lt
       LaunchTemplateData:
         ImageId: !Ref WorkerAmiId
         InstanceType: !Ref InstanceType
         IamInstanceProfile:
-          Name: !Ref KubeadmInstanceProfile
+          Name: !Ref KubernetesInstanceProfile
         SecurityGroupIds:
           - !Ref WorkerSG
-        TagSpecifications:
-          - ResourceType: instance
-            Tags:
-              - Key:   'Name'
-                Value: !Sub '${ClusterName}-worker'
         UserData:
           Fn::Base64:
             !Sub |
               #!/usr/bin/env bash
               export cluster_name="${ClusterName}"
+              export k8s_distro="${KubernetesDistro}"
               bash /root/scripts/init-worker-aws.sh
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key:   'Name'
+                Value: !Sub '${ClusterName}-worker'
 
   WorkerASG:
     Type: AWS::AutoScaling::AutoScalingGroup
     DependsOn: ControlPlane
     Properties:
-      AutoScalingGroupName: kubeadm-worker-asg
+      AutoScalingGroupName: kubernetes-worker-asg
       LaunchTemplate:
         LaunchTemplateId: !Ref WorkerLaunchTemplate
         Version: !GetAtt WorkerLaunchTemplate.LatestVersionNumber
@@ -100,22 +109,31 @@ Resources:
   ControlPlaneSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: 'kubeadm SG for Control Plane nodes'
+      GroupDescription: 'SG for Kubernetes Control Plane nodes'
       VpcId: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcId' }
       SecurityGroupIngress:
-        - IpProtocol: icmp
+        - Description: ICMP ping
+          IpProtocol: icmp
           FromPort: -1
           ToPort: -1
           CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
-        - IpProtocol: tcp
-          FromPort: 6443
-          ToPort: 6443
-          CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
-        - IpProtocol: tcp
+        - Description: etcd
+          IpProtocol: tcp
           FromPort: 2379
           ToPort: 2380
           CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
-        - IpProtocol: tcp
+        - Description: kube-apiserver
+          IpProtocol: tcp
+          FromPort: 6443
+          ToPort: 6443
+          CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
+        - Description: Flannel VXLAN
+          IpProtocol: udp
+          FromPort: 8472
+          ToPort: 8472
+          CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
+        - Description: Kubelet metrics
+          IpProtocol: tcp
           FromPort: 10250
           ToPort: 10252
           CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
@@ -123,18 +141,30 @@ Resources:
   WorkerSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: 'kubeadm SG for Worker nodes'
+      GroupDescription: 'SG for Kubernetes Worker nodes'
       VpcId: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcId' }
       SecurityGroupIngress:
         - IpProtocol: icmp
           FromPort: -1
           ToPort: -1
           CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
-        - IpProtocol: tcp
+        - Description: kube-apiserver
+          IpProtocol: tcp
+          FromPort: 6443
+          ToPort: 6443
+          CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
+        - Description: Flannel VXLAN
+          IpProtocol: udp
+          FromPort: 8472
+          ToPort: 8472
+          CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
+        - Description: Kubelet metrics
+          IpProtocol: tcp
           FromPort: 10250
           ToPort: 10250
           CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
-        - IpProtocol: tcp
+        - Description: Node ports
+          IpProtocol: tcp
           FromPort: 30000
           ToPort: 32767
           CidrIp: { Fn::ImportValue: !Sub '${ClusterName}-vpc-VpcCidr' }
@@ -143,7 +173,7 @@ Resources:
   #######
   # IAM #
   #######
-  KubeadmRole:
+  KubernetesRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -159,7 +189,7 @@ Resources:
         - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
         - 'arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess'
       Policies:
-        - PolicyName: 'KubeadmPolicy'
+        - PolicyName: !Sub 'KubernetesPolicy-${ClusterName}'
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -182,11 +212,11 @@ Resources:
                   - 'logs:*'
                 Resource: !Sub '${LogGroup.Arn}/*'
   
-  KubeadmInstanceProfile:
+  KubernetesInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
       Roles:
-        - !Ref KubeadmRole
+        - !Ref KubernetesRole
 
 
   ###########
@@ -195,7 +225,7 @@ Resources:
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties: 
-      LogGroupName: '/aws/ec2/kubeadm'
+      LogGroupName: !Sub '/aws/ec2/kubernetes/${ClusterName}'
       RetentionInDays: 7
   LogStreamControlPlane:
     Type: AWS::Logs::LogStream

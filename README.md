@@ -3,9 +3,16 @@ Deployer utilities for various Kubernetes distributions
 
 === NEED TO UPDATE ===
 
-Deployment wrapper for the
-[kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm)
-bootstrapper for [Kubernetes](https://kubernetes.io) clusters.
+Deployment wrapper for various [Kubernetes](https://kubernetes.io)
+distributions. Currently, there is support for the following Kubernetes
+distributions:
+
+* [k3s](https://k3s.io/), a very quick-to-get-started distro from [Rancher
+  Labs](https://rancher.com)
+* [kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm),
+  a lower-level cluster bootstrapper from the core Kubernetes team.
+
+Each deployment ...
 
 This is an "easy" way to get `kubeadm` installed on both control plane node(s)
 and worker nodes, especially for the examples that include infracode to help

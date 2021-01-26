@@ -50,7 +50,7 @@
       "ssh_username": "packer",
       "ssh_wait_timeout": "20m",
       "type": "qemu",
-      "vm_name": "packer-k8s-{{user `node_type`}}-{{user `os_name`}}-{{user `os_version`}}-amd64"
+      "vm_name": "packer-k8s-{{user `k8s_distro`}}-{{user `node_type`}}-{{user `os_name`}}-{{user `os_version`}}-amd64"
     },
 
     {
@@ -90,11 +90,11 @@
         ["modifyvm", "{{.Name}}", "--cpus", "2"]
       ],
       "virtualbox_version_file": ".vbox_version",
-      "vm_name": "packer-k8s-{{user `node_type`}}-{{user `os_name`}}-{{user `os_version`}}-amd64"
+      "vm_name": "packer-k8s-{{user `k8s_distro`}}-{{user `node_type`}}-{{user `os_name`}}-{{user `os_version`}}-amd64"
     },
 
     {
-      "ami_name": "packer-k8s-{{user `node_type`}}-{{user `os_name`}}-{{user `os_version`}}-{{user `os_alias`}}",
+      "ami_name": "packer-k8s-{{user `k8s_distro`}}-{{user `node_type`}}-{{user `os_name`}}-{{user `os_version`}}-{{user `os_alias`}}",
       "ami_virtualization_type": "hvm",
       "instance_type": "t3a.small",
       "launch_block_device_mappings": [

@@ -6,11 +6,12 @@ SHELL = /usr/bin/env bash -euo pipefail
 #############
 
 AWS_ACCOUNT_NUMBER = $(shell aws sts get-caller-identity --query Account --output text)
-BUCKET_NAME = "s3://$${cluster_name}-$(AWS_ACCOUNT_NUMBER)"
-STACK_NAME = "$${cluster_name}-$${stack}"
+CLUSTER_NAME = $(shell jq -r .ClusterName ./aws-cloudformation/vars.json)
+BUCKET_NAME = "s3://$(CLUSTER_NAME)-$(AWS_ACCOUNT_NUMBER)"
+STACK_NAME = "$(CLUSTER_NAME)-$${stack}"
 
 help:
-	@printf "Review the Makefile for a list of targets. Each target will throw an error if you forgot to pass a required variable.\n"
+	@printf "Review the Makefile(s) for a list of targets. Each target will throw a meaningful error if you forgot to pass a required variable.\n"
 
 deploy-aws:
 	@make -s create-s3-bucket || true
@@ -19,7 +20,6 @@ deploy-aws:
 		--stack-name $(STACK_NAME) \
 		--parameter-overrides \
 			$$(jq -r 'to_entries | map("\(.key)=\(.value | tostring)") | .[]' ./aws-cloudformation/vars.json) \
-			ClusterName="$${cluster_name}" \
 		--capabilities CAPABILITY_IAM \
 		--template-file ./aws-cloudformation/"$${stack}".yaml
 
@@ -50,7 +50,7 @@ ssmsm-node:
 		$$( \
 			aws ec2 describe-instances \
 				--filters \
-					Name=tag:Name,Values="$${cluster_name}-$${node_type}" \
+					Name=tag:Name,Values="$(CLUSTER_NAME)-$${node_type}" \
 					Name=instance-state-name,Values=running \
 				--query 'Reservations[*].Instances[*].InstanceId' \
 				--output text \

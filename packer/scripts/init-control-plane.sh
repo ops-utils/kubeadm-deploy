@@ -75,7 +75,8 @@ if [[ "${k8s_distro}" == "kubeadm" ]]; then
 #######
 elif [[ "${k8s_distro}" == "k3s" ]]; then
 
-  curl -fsSL https://get.k3s.io | sh -
+  curl -fsSL -o /tmp/install.sh https://get.k3s.io
+  sh /tmp/install.sh
   cp /var/lib/rancher/k3s/server/node-token /root/k8s-join/token
 
 fi

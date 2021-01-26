@@ -1,9 +1,9 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'kubeadm'
+Description: 'Kubernetes VPC'
 
 Parameters:
   VpcCidr:
-    Description: CIDR block for the kubeadm VPC
+    Description: CIDR block for the Kubernetes VPC
     Type: String
     Default: '10.0.0.0/16'
   PublicSubnet1Cidr:
@@ -35,7 +35,7 @@ Resources:
       CidrBlock: !Ref VpcCidr
       Tags:
         - Key:   'Name'
-          Value: 'kubeadm-vpc'
+          Value: 'kubernetes-vpc'
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
