@@ -142,6 +142,7 @@ Resources:
       DestinationCidrBlock: '0.0.0.0/0'
       NatGatewayId: !Ref NATGateway
 
+
 Outputs:
   VpcId:
     Description: VPC ID

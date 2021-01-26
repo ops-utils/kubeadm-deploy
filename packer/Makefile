@@ -24,17 +24,17 @@ build: validate
 		-- \
 		packer.json
 
-convert-vbox-to-raw:
-	@vboxmanage clonemedium disk --format RAW "$${disk}" "$${disk}".img
-
-convert-qemu-to-raw:
-	@qemu-img convert -f qcow2 -O raw "$${disk}" "$${disk}".img
+convert-vbox-to-qemu:
+	@qemu-img convert -f vmdk -O qcow2 "$${disk}" "$${disk}".qcow2
 
 convert-qemu-to-vbox:
 	@for i in control-plane worker; do \
 		printf "Converting $${i} from QEMU qcow2 to VMDK...\n"; \
   	qemu-img convert -O vmdk output-qemu-"$${i}"/packer-k8s-"$${i}"-debian-10.7.0-amd64 output-virtualbox-iso-"$${i}"/packer-k8s-"$${i}"-debian-10.7.0-amd64-disk001.vmdk; \
 	done
+
+convert-qemu-to-raw:
+	@qemu-img convert -f qcow2 -O raw "$${disk}" "$${disk}".img
 
 # Some of these flags need to be set explicitly here; e.g.:
 #
