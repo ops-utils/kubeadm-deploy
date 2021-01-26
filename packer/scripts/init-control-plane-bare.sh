@@ -12,17 +12,22 @@ set -euo pipefail
 # where port 8000 is open, then try to retrieve these files from the provided
 # endpoint.
 
-# Run the core init script
+# Run the base init script for the control plane
 bash ./init-control-plane.sh
 
 printf "Initializing Control Plane for platform 'bare'...\n" > /dev/stderr
 
-cat <<EOF > /etc/systemd/system/kubeadm-join.service
+# # Give the control plane node a static IP -- though this seems to break DNS on the host
+# iface=$(grep -E -o 'eth[^ ]+ |en[^ ]+ ' /etc/network/interfaces)
+# sed -E -i "/iface ${iface}/d" /etc/network/interfaces
+# printf "iface %s inet static\n\taddress 10.0.2.15\tnetmask 255.255.255.0\n" "${iface}" >> /etc/network/interfaces
+
+cat <<EOF > /etc/systemd/system/k8s-join.service
 [Unit]
-Description=HTTP server helper for joining nodes to this kubeadm cluster
+Description=HTTP server helper for joining nodes to this Kubernetes cluster
 
 [Service]
-ExecStart=/usr/bin/env python3 -m http.server -d /root/kubeadm-join
+ExecStart=/usr/bin/env python3 -m http.server -d /root/k8s-join
 Restart=always
 RestartSec=1s
 
@@ -31,6 +36,7 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable kubeadm-join.service
+systemctl enable k8s-join.service
+systemctl is-enabled k8s-join.service
 
 exit 0

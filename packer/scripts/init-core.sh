@@ -68,7 +68,6 @@ init-cri() {
   command -v docker || return 1
 }
 
-
 init-kubeadm() {
   printf "\nInstalling kubeadm...\n\n" > /dev/stderr && sleep 2
   curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
@@ -79,6 +78,12 @@ init-kubeadm() {
     kubelet \
     kubeadm \
     kubectl
+  
+  # printf "\nInstalling helm...\n\n" > /dev/stderr && sleep 2
+  # curl https://baltocdn.com/helm/signing.asc | apt-key add -
+  # printf "deb https://baltocdn.com/helm/stable/debian/ all main\n" > /etc/apt/sources.list.d/helm-stable-debian.list
+  # apt-get update && apt-get install -y helm
+  # helm repo add stable https://charts.helm.sh/stable
 }
 
 lock-versions() {
@@ -108,13 +113,25 @@ disable-swap() {
   swapoff -a
 }
 
+init-k3s() {
+  printf "Will not initialize k3s control plane during core init; will do it during its dedicated init phase\n" > /dev/stderr
+}
+
 main() {
   init-sys-packages
-  init-cri "${cri:-}"
-  init-kubeadm
-  lock-versions
-  edit-iptables
-  disable-swap
+
+  if [[ "${k8s_distro:-}" == "kubeadm" ]]; then
+    init-cri "${cri:-}"
+    init-kubeadm
+    lock-versions
+    edit-iptables
+    disable-swap
+  elif [[ "${k8s_distro:-}" == "k3s" ]]; then
+    init-k3s
+  else
+    printf "ERROR: Invalid k8s_distro var provided. Exiting.\n" > /dev/stderr
+    exit 1
+  fi
 
   apt-wipe
 

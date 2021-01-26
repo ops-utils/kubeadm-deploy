@@ -4,6 +4,7 @@
     "aws_builder_vpc_id": null,
     "cluster_name": null,
     "cri": "docker",
+    "k8s_distro": null,
     "node_type": null,
     "os_alias": "buster",
     "os_name": "debian",
@@ -161,18 +162,12 @@
       "environment_vars": [
         "cluster_name={{user `cluster_name`}}",
         "cri={{user `cri`}}",
+        "k8s_distro={{user `k8s_distro`}}",
         "node_type={{user `node_type`}}",
         "platform={{user `platform`}}",
         "pod_network_cidr={{user `pod_network_cidr`}}",
         "subnet={{user `subnet`}}"
       ]
-    }
-
-  ],
-
-  "post-processors": [
-    {
-      "type": "manifest"
     }
   ]
 }

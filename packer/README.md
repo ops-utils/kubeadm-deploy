@@ -11,7 +11,7 @@ has increasingly become a pain in my ass. You can modify the target OS as you
 wish.
 
 Expectation during the agnostic init step(s) is that the cluster join
-information (the token and the hash) are found in `/root/kubeadm-join/*`.
+information (the token and the hash) are found in `/root/k8s-join/*`.
 
 Variables are expected to be stored in a `vars.json` file in this directory.
 
